@@ -1,0 +1,576 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <WDT.h>
+
+#include <U8g2lib.h>
+#include <Adafruit_VL53L0X.h>
+//ble config wifi
+// #include "BLEDevice.h"
+// #include "BLEWifiConfigService.h"
+
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00a";
+
+static constexpr long gs_scrn_serial_baud = 115200;
+static constexpr long gs_pdb_serial_baud = 115200;
+
+Stream& g_scrn_serial = Serial;
+Stream& g_pdb_serial = Serial1;
+Stream& g_dbg_serial = Serial;
+
+static constexpr uint32_t gs_wdt_dura_ms = 5000;
+
+// BLEWifiConfigService configService;
+////ble config wifi
+WDT wdt;
+
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+
+U8G2_ST75256_JLX25664_F_HW_I2C u8g2(U8G2_R0, /* reset=*/3);
+//自行实现绘制圆弧
+void drawArc(u8g2_uint_t cx, u8g2_uint_t cy, u8g2_uint_t r, int start_angle, int end_angle) {
+  // 角度转换为弧度
+  float start_radians = start_angle * 3.1415926 / 180;
+  float end_radians = end_angle * 3.1415926 / 180;
+
+  // 绘制圆弧
+  for (float radians = start_radians; radians <= end_radians; radians += 0.01) {
+    int x = cx + r * cos(radians);
+    int y = cy + r * sin(radians);
+    u8g2.drawPixel(x, y);
+  }
+}
+
+// 绘制缺少sim卡  实际高24 宽 20
+void drawNoSIM(uint8_t x, uint8_t y) {
+  // 起点矫正 y
+  y += 3;
+  u8g2.drawLine(x + 5, y, x + 20, y);           // 绘制上方线条
+  u8g2.drawLine(x, y + 18, x + 20, y + 18);     // 绘制下方线条
+  u8g2.drawLine(x, y + 5, x, y + 18);           // 绘制左侧线条
+  u8g2.drawLine(x + 20, y, x + 20, y + 18);     // 绘制右侧线条
+  u8g2.drawLine(x, y + 5, x + 5, y);            // 绘制缺口
+  u8g2.drawLine(x + 2, y + 21, x + 18, y - 3);  // 绘制斜线
+  u8g2.setFont(u8g2_font_5x7_tf);
+  u8g2.drawStr(x + 3, y + 11, "SIM");  // 链接的节点数量
+}
+
+// 绘制蜂窝信号  宽35 高26
+void drawCellStatus(uint8_t x, uint8_t y, int status) {
+  Serial.println(status);
+
+  u8g2.drawLine(x, y, x + 3, y + 7);
+  u8g2.drawLine(x, y, x + 7, y);
+  u8g2.drawLine(x + 3, y + 7, x + 7, y);
+  u8g2.drawLine(x + 3, y, x + 3, y + 15);  //竖线
+  switch ((char)(status >> 8)) {
+    case 5:
+      u8g2.drawLine(x + 20, y + 15, x + 20, y + 3);  // 5格
+    case 4:
+      u8g2.drawLine(x + 17, y + 15, x + 17, y + 5);  // 4格
+    case 3:
+      u8g2.drawLine(x + 14, y + 15, x + 14, y + 7);  // 3格
+    case 2:
+      u8g2.drawLine(x + 11, y + 15, x + 11, y + 9);  // 2格
+    case 1:
+      u8g2.drawLine(x + 8, y + 15, x + 8, y + 11);  // 1格
+    case 0:
+      u8g2.drawLine(x + 5, y + 15, x + 5, y + 13);  // 0格
+      break;
+  }
+  u8g2.setFont(u8g2_font_5x7_tf);
+  switch (status & 0xff) {
+    case 0:
+      //   u8g2.drawLine(x, y + 17, x + 20, y);  // 无信号
+      break;
+    case 1:
+      u8g2.drawStr(x + 8, y + 7, "3G");  //
+      break;
+    case 2:
+      u8g2.drawStr(x + 8, y + 7, "4G");  //
+      break;
+    case 3:
+      u8g2.drawStr(x + 8, y + 7, "5G");  //
+      break;
+    default:
+      break;
+  }
+}
+
+// 绘制WiFi符号 宽度26 高度20
+void drawWiFiStatus(uint8_t cx, uint8_t cy, int status) {
+
+  // 改动，将所有的图标起始坐标放左上角
+  // 绘制WiFi符号
+  switch (status) {
+    case 0:
+      u8g2.drawLine(cx, cy + 16, cx + 12, cy);  // 绘制直线
+    case 4:
+      drawArc(cx + 10, cy + 13, 12, -150, -30);  // 第三个弧线
+    case 3:
+      drawArc(cx + 10, cy + 13, 8, -150, -30);  // 第二个弧线
+    case 2:
+      drawArc(cx + 10, cy + 13, 4, -150, -30);  // 第一个弧线
+    case 1:
+      u8g2.drawCircle(cx + 10, cy + 13, 2, U8G2_DRAW_ALL);  // 中心小圆
+      break;
+  }
+}
+
+// 绘制电源插头 实际宽15   高22
+void drawChargerConnected(uint8_t x, uint8_t y) {
+
+  u8g2.drawFrame(x, y + 5, 15, 8);
+  u8g2.drawFrame(x + 4, y + 13, 7, 4);
+  u8g2.drawBox(x + 4, y, 2, 5);
+  u8g2.drawBox(x + 10, y, 2, 5);
+  u8g2.drawBox(x + 6, y + 17, 2, 5);
+}
+
+// 电池图标  宽31 高12
+void drawBatteryLevel(uint8_t x, uint8_t y, uint8_t level) {
+  // 根据level填充电池
+  int w = 26;
+  int h = 12;
+  u8g2.drawFrame(x, y, w, h);                            // 电池框
+  u8g2.drawBox(x + w, y + 4, 2, 4);                      // 电池头
+  u8g2.drawBox(x + 2, y + 2, (w - 4) * level / 100, 8);  // 电量
+}
+
+// 绘制热点图标 宽度25 高度20
+void drawWiFiHotspot(uint8_t x, uint8_t y, int count) {
+  // 修正起点
+
+  u8g2.drawCircle(x + 8, y + 9, 2, U8G2_DRAW_ALL);  // 中心小圆
+  drawArc(x + 8, y + 9, 5, -250, 60);               // 第一个弧线
+  drawArc(x + 8, y + 9, 9, -250, 60);               // 第二个弧线
+
+  char countStr[4];  // 最多3位数，再加上结束符'\0'
+  snprintf(countStr, sizeof(countStr), "%d", count);
+
+  u8g2.setFont(u8g2_font_5x7_tf);
+  u8g2.drawStr(x + 6, y + 20, countStr);  // 链接的节点数量
+}
+
+
+void fullSreenShow(char*  cmd)
+{
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_wqy16_t_gb2312b);
+    if(u8g2.getDisplayWidth() > u8g2.getStrWidth(cmd)*2)
+    {
+      u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(cmd) * 2) / 2, u8g2.getDisplayHeight() / 2);
+      u8g2.print(cmd);
+    }else
+    {
+      int linecount = u8g2.getStrWidth(cmd) * 2 / u8g2.getDisplayWidth() + 1;
+      u8g2.setCursor(40, u8g2.getDisplayHeight() / 2-10);
+      u8g2.print("系统急停，请确认状态！");
+      
+      u8g2.setCursor(32, u8g2.getDisplayHeight() / 2+10);
+      u8g2.print("长按开机键解除急停状态。");
+    }
+
+    u8g2.sendBuffer();
+}
+
+char macaddr[50];   //mac地址
+char version[50];   //版本号
+char jsontype[10];  //数据类型Addr4
+
+enum regIndex {
+  // 从 Addr0 到 Addr21
+  Addr0 = 0,  //硬件版本|软件版本
+  Addr1,      //ota版本
+  Addr2,      //波特率
+  Addr3,      //设备地址
+  Addr4,      //状态字
+  Addr5,      //管电压设置值
+  Addr6,      //管电流设置
+  Addr7,      //曝光时间
+  Addr8,      //管电压
+  Addr9,      //管电流
+  Addr10,     //范围指示状态
+  Addr11,     //曝光状态
+  Addr12,     //范围指示启动
+  Addr13,     //曝光启动申请
+  Addr14,     //电池电量
+  Addr15,     //电池电压
+  Addr16,     //油盒温度
+  Addr17,     //关机请求
+  Addr18,     //校准位置
+  Addr19,     //校准值
+  Addr20,     //充能状态
+  Addr21,     //曝光次数
+
+  // 接下来续写 101 到 109
+  Addr101,  //档位调整事件
+  Addr102,  //充电
+  Addr103,  //dap 高位
+  Addr104,  //dap 低位
+  Addr105,  //测距结果
+  Addr106,  //wifi热点状态 0xFF 未开启，其余为接入点数量
+  Addr107,  //蜂窝信号  高字节  信号0-5  0-无服务 1-3G 2-4G 3-5G
+  Addr108,  //高字节 0-4 电池格数   低字节 0-4 wan侧WiFi信号
+  Addr109,  //0位：0 充电器未连接  1 充电器链接
+            //1位：0 电池未充满    1 电池充满
+            //2位：0 wan侧WiFi未连接  1 wan侧WiFi已连接
+            //3位：0 wan侧蜂窝网没有连接  1 wan侧蜂窝网已连接
+            //4位：0 sim卡异常   1 sim卡正常
+  Addr110,  //测距修正
+
+
+};  //索引
+
+char regValue[Addr110 + 1][6];  //寄存器
+String cleanedString;
+
+int parse_str() {
+  // 从串口接收数据
+  String receivedData = "";
+  while (Serial1.available()) {
+    char c = Serial1.read();
+    receivedData += c;
+  }
+
+  if (receivedData.length() == 0) {
+    return -2;  //长度错误
+  }
+
+  //收到json
+  //Serial.print(receivedData);
+  if (!(receivedData.startsWith("{")) || (!(receivedData.endsWith("}") || receivedData.endsWith("\n")))) {
+    Serial.print("json error, return -3");
+    if (!receivedData.startsWith("{")) {
+      Serial.print("error \"{\"");
+      Serial.println(receivedData[0]);
+    }
+    if (!receivedData.endsWith("}")) {
+      Serial.print("error \"}\"");
+      Serial.println(receivedData[receivedData.length() - 1]);
+    }
+    return -3;  // 非有效json
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, receivedData);
+
+  // Test if parsing succeeds
+  if (!error) {
+    if (doc.containsKey("json_type"))
+      Serial.println("json_type found in JSON");
+  } else {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.print("return -1");
+    return -1;
+  }
+
+  strcpy(jsontype, doc["json_type"]);
+  Serial.println(jsontype);
+  if (!strcmp(jsontype, "info")) {
+
+    if (doc.containsKey("mac_address")) {
+      strcpy(macaddr, doc["mac_address"]);
+      for (int i = 0; i < strlen(macaddr); i++) {
+        if (macaddr[i] != ':') {
+          cleanedString += macaddr[i];
+        }
+      }
+      String ssidstr = "GKXG-DR-" + cleanedString.substring(cleanedString.length() - 6, cleanedString.length());
+      Serial.println(ssidstr);
+    }
+    if (doc.containsKey("version")) {
+      strcpy(version, doc["version"]);
+      Serial.println(version);
+    }
+  }
+  //{"json_type:":"cmd","command":"factory reset"}  路由系统重置
+  if (!strcmp(jsontype, "cmd")) {
+    wdt.RefreshWatchdog();
+    Serial.println("json type cmd");
+
+    if (doc.containsKey("command")) {
+      Serial.println("json has cmd");
+      if (!strcmp("factory reset", doc["command"])) {
+        Serial.println("json type cmd");
+        u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_wqy16_t_gb2312b);
+        char str1[30];
+        strcpy(str1, "系统重置，耗时较长！");
+        char str2[30];
+        strcpy(str2,  "请耐心等待。。。");
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(str1) * 2) / 2, u8g2.getDisplayHeight() / 2 - 8);
+        u8g2.print(str1);
+        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(str2) * 2) / 2, u8g2.getDisplayHeight() / 2 + 8);
+        u8g2.print(str2);
+        u8g2.sendBuffer();
+        wdt.RefreshWatchdog();
+        delay(3000);
+        wdt.RefreshWatchdog();
+        delay(2000);
+        while (1)
+          ;
+      }
+    }
+  }
+
+  if (!strcmp(jsontype, "register")) {
+    Serial.println("parse register");
+    if (doc.containsKey("0")) {
+      strcpy(regValue[Addr0], doc["0"]);
+    }
+    if (doc.containsKey("1")) {
+      strcpy(regValue[Addr1], doc["1"]);
+    }
+    if (doc.containsKey("2")) {
+      strcpy(regValue[Addr2], doc["2"]);
+    }
+    if (doc.containsKey("3")) {
+      strcpy(regValue[Addr3], doc["3"]);
+    }
+    if (doc.containsKey("4")) {
+      strcpy(regValue[Addr5], doc["4"]);
+    }
+    if (doc.containsKey("5")) {
+      strcpy(regValue[Addr5], doc["5"]);
+    }
+    if (doc.containsKey("6"))
+      strcpy(regValue[Addr6], doc["6"]);
+    if (doc.containsKey("7"))
+      strcpy(regValue[Addr7], doc["7"]);
+    if (doc.containsKey("8"))
+      strcpy(regValue[Addr8], doc["8"]);
+    if (doc.containsKey("9"))
+      strcpy(regValue[Addr9], doc["9"]);
+    if (doc.containsKey("10"))
+      strcpy(regValue[Addr10], doc["10"]);
+    if (doc.containsKey("11"))
+      strcpy(regValue[Addr11], doc["11"]);
+    if (doc.containsKey("12"))
+      strcpy(regValue[Addr12], doc["12"]);
+    if (doc.containsKey("13"))
+      strcpy(regValue[Addr13], doc["13"]);
+    if (doc.containsKey("14"))
+      strcpy(regValue[Addr14], doc["14"]);
+    if (doc.containsKey("15"))
+      strcpy(regValue[Addr15], doc["15"]);
+    if (doc.containsKey("105"))
+      strcpy(regValue[Addr105], doc["105"]);
+    if (doc.containsKey("106"))
+      strcpy(regValue[Addr106], doc["106"]);
+    if (doc.containsKey("107"))
+      strcpy(regValue[Addr107], doc["107"]);
+    if (doc.containsKey("108"))
+      strcpy(regValue[Addr108], doc["108"]);
+    if (doc.containsKey("109"))
+      strcpy(regValue[Addr109], doc["109"]);
+    if (doc.containsKey("110"))
+      strcpy(regValue[Addr110], doc["110"]);
+  }
+  Serial.println("rcv json");
+  return 0;
+}
+
+VL53L0X_RangingMeasurementData_t measure;
+#define numReadings 20
+int readings[numReadings];
+int readIndex;
+int total;
+bool isTofOn;
+/*
+"key_name":"add" 或"sub"
+
+"key_val":"press"或"release"
+*/
+#define GEAR_UP   PA12
+#define GEAR_DOWN PA27
+#define XSHUTDOWN PA14
+#define BLC       PB3
+
+int calc_dis(void) {
+
+  // Serial.print("Reading a measurement... ");
+  lox.rangingTest(&measure, false);  // pass in 'true' to get debug data printout!
+
+  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
+  } else {
+    return -1;  //超限
+  }
+
+  total = total - readings[readIndex];
+  // 读入当前旋转电位计的数值，
+  // 并将其存储到数组的最后一位。
+  readings[readIndex] = measure.RangeMilliMeter;
+  // 将最新读入的数值加入到总值中
+  total = total + readings[readIndex++];
+  // 将数组指示索引值加1
+  // 判断数组指示索引是否超出数组范围，
+  // 如果是，将数组指示索引重置为0
+  if (readIndex >= numReadings) {
+    readIndex = 0;
+  }
+  //调试
+  int reg0 = readings[0];
+  if((reg0==8191)||(reg0==0))
+    return total / numReadings;;
+  int loop=0;
+  for(; loop< numReadings; loop++)
+  {
+    if(readings[loop] != reg0)
+      break;
+  }
+
+  if(loop==numReadings)
+  {
+    Serial.println("Adafruit VL53L0X sleep");
+    Serial.println(loop);
+    Serial.println(reg0);
+    digitalWrite(XSHUTDOWN, LOW);
+    delay(10000);
+    digitalWrite(XSHUTDOWN, HIGH);
+  }
+  // 计算平均值
+  return total / numReadings;
+}
+
+void GearUpChange(uint32_t id, uint32_t event) {
+
+  if (digitalRead(GEAR_UP)) {
+    Serial.println("gear up releaseed");
+    JsonDocument doc;
+    // Add values in the document
+    doc["json_type"] = "data";
+    doc["key_name"] = "add";
+    doc["key_val"] = "released";
+    // Generate the minified JSON and send it to the Serial port
+    serializeJson(doc, Serial1);
+  } else {
+    Serial.println("gear up pressed");
+    JsonDocument doc;
+    // Add values in the document
+    doc["json_type"] = "data";
+    doc["key_name"] = "add";
+    doc["key_val"] = "pressed";
+    // Generate the minified JSON and send it to the Serial port
+    serializeJson(doc, Serial1);
+  }
+}
+
+void GearDownChange(uint32_t id, uint32_t event) {
+
+  if (digitalRead(GEAR_DOWN)) {
+    Serial.println("gear up released");
+    JsonDocument doc;
+    // Add values in the document
+    doc["json_type"] = "data";
+    doc["key_name"] = "sub";
+    doc["key_val"] = "released";
+    // Generate the minified JSON and send it to the Serial port
+    serializeJson(doc, Serial1);
+  } else {
+    Serial.println("gear up pressed");
+    JsonDocument doc;
+    // Add values in the document
+    doc["json_type"] = "data";
+    doc["key_name"] = "sub";
+    doc["key_val"] = "pressed";
+    // Generate the minified JSON and send it to the Serial port
+    serializeJson(doc, Serial1);
+  }
+}
+
+
+char cmd[20];
+
+
+void setup(void) {
+
+  Serial.begin(gs_scrn_serial_baud);
+  Serial1.begin(gs_scrn_serial_baud);
+
+  //初始化看门狗
+  wdt.InitWatchdog(gs_wdt_dura_ms);  // setup watchdog
+  wdt.StartWatchdog();     // enable watchdog timer
+
+  //加减档按钮
+  pinMode(GEAR_UP, INPUT_IRQ_CHANGE);  //
+  digitalSetIrqHandler(GEAR_UP, GearUpChange);
+
+  pinMode(GEAR_DOWN, INPUT_IRQ_CHANGE);  //
+  digitalSetIrqHandler(GEAR_DOWN, GearDownChange);
+
+
+  pinMode(XSHUTDOWN, OUTPUT); 
+  digitalWrite(XSHUTDOWN, HIGH);
+
+  //wait until serial port opens for native USB devices
+  while (!Serial) {
+    delay(1);
+  }
+
+
+  g_dbg_serial.println(String("init Adafruit VL53L0X......") + String(gs_wifi_mc_ver_str));
+  //if (!lox.begin(VL53L0X_I2C_ADDR, true, &Wire)) {
+  if (!lox.begin()) {
+    Serial.println(F("Failed to boot VL53L0X"));
+    delay(10000);
+  }
+  wdt.RefreshWatchdog();
+
+  // power
+  g_dbg_serial.println(F("VL53L0X started\n"));
+
+
+  pinMode(BLC, OUTPUT);
+  digitalWrite(BLC, LOW);
+}
+
+long lastsend;
+
+void loop(void) {
+  //急停状态，只显示急停  别的不显示
+  while (atoi(regValue[Addr4]) & 0x10) {
+    fullSreenShow("系统急停，请确认状态后,长按开机键解除急停!");
+  }
+  // 平均值
+  int average = calc_dis();
+  g_dbg_serial.print(F("distance:"));
+  g_dbg_serial.println(average);
+
+  parse_str();
+  int iconIndex = 1;
+  drawBatteryLevel(256 - 28 * iconIndex, 0, atof(regValue[Addr14]));  //电池
+  iconIndex++;
+  if (atoi(regValue[Addr106]) != 0xFF) {
+    drawWiFiHotspot(256 - 25 * iconIndex, 0, atoi(regValue[Addr106]));  // 中心位置起 数据位置不对
+    iconIndex++;
+  }
+  if (atoi(regValue[Addr109]) & 0x4) {
+    drawWiFiStatus(256 - 25 * iconIndex, 0, atoi(regValue[Addr108]) & 0xff);  //wan侧WiFi
+    iconIndex++;
+  }
+  if (atoi(regValue[Addr109]) & 0x8) {
+    drawCellStatus(256 - 25 * iconIndex, 0, atoi(regValue[Addr107]));  //蜂窝信号
+  }
+  if (atoi(regValue[Addr109]) & 0x1) {
+    drawChargerConnected(240, 24);  //插充电器
+  }
+
+  if (!(atoi(regValue[Addr109]) & 0x10)) {
+    drawNoSIM(215, 24);  //无sim卡
+  }
+
+  //  if ((atoi(regValue[Addr10]) || (millis() - lastsend) > 2000)) {
+  if ((millis() - lastsend) > 2000) {
+
+    lastsend = millis();
+    JsonDocument doc;
+    // Add values in the document
+    doc["json_type"] = "data";
+    doc["tof_distance"] = String(average);
+
+    // Generate the minified JSON and send it to the Serial port
+    serializeJson(doc, Serial1);
+  }
+  wdt.RefreshWatchdog();
+  delay(30);
+}
