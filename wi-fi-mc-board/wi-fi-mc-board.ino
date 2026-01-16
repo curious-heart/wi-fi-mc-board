@@ -2,13 +2,14 @@
 #include <ArduinoJson.h>
 #include <WDT.h>
 
-#include <U8g2lib.h>
 #include <Adafruit_VL53L0X.h>
 //ble config wifi
 // #include "BLEDevice.h"
 // #include "BLEWifiConfigService.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00a";
+#include "wifi_ops.h"
+
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00j";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 115200;
@@ -17,161 +18,13 @@ Stream& g_scrn_serial = Serial;
 Stream& g_pdb_serial = Serial1;
 Stream& g_dbg_serial = Serial;
 
-static constexpr uint32_t gs_wdt_dura_ms = 5000;
+static constexpr uint32_t gs_wdt_dura_ms = 30000;
 
 // BLEWifiConfigService configService;
 ////ble config wifi
 WDT wdt;
 
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
-
-U8G2_ST75256_JLX25664_F_HW_I2C u8g2(U8G2_R0, /* reset=*/3);
-//自行实现绘制圆弧
-void drawArc(u8g2_uint_t cx, u8g2_uint_t cy, u8g2_uint_t r, int start_angle, int end_angle) {
-  // 角度转换为弧度
-  float start_radians = start_angle * 3.1415926 / 180;
-  float end_radians = end_angle * 3.1415926 / 180;
-
-  // 绘制圆弧
-  for (float radians = start_radians; radians <= end_radians; radians += 0.01) {
-    int x = cx + r * cos(radians);
-    int y = cy + r * sin(radians);
-    u8g2.drawPixel(x, y);
-  }
-}
-
-// 绘制缺少sim卡  实际高24 宽 20
-void drawNoSIM(uint8_t x, uint8_t y) {
-  // 起点矫正 y
-  y += 3;
-  u8g2.drawLine(x + 5, y, x + 20, y);           // 绘制上方线条
-  u8g2.drawLine(x, y + 18, x + 20, y + 18);     // 绘制下方线条
-  u8g2.drawLine(x, y + 5, x, y + 18);           // 绘制左侧线条
-  u8g2.drawLine(x + 20, y, x + 20, y + 18);     // 绘制右侧线条
-  u8g2.drawLine(x, y + 5, x + 5, y);            // 绘制缺口
-  u8g2.drawLine(x + 2, y + 21, x + 18, y - 3);  // 绘制斜线
-  u8g2.setFont(u8g2_font_5x7_tf);
-  u8g2.drawStr(x + 3, y + 11, "SIM");  // 链接的节点数量
-}
-
-// 绘制蜂窝信号  宽35 高26
-void drawCellStatus(uint8_t x, uint8_t y, int status) {
-  Serial.println(status);
-
-  u8g2.drawLine(x, y, x + 3, y + 7);
-  u8g2.drawLine(x, y, x + 7, y);
-  u8g2.drawLine(x + 3, y + 7, x + 7, y);
-  u8g2.drawLine(x + 3, y, x + 3, y + 15);  //竖线
-  switch ((char)(status >> 8)) {
-    case 5:
-      u8g2.drawLine(x + 20, y + 15, x + 20, y + 3);  // 5格
-    case 4:
-      u8g2.drawLine(x + 17, y + 15, x + 17, y + 5);  // 4格
-    case 3:
-      u8g2.drawLine(x + 14, y + 15, x + 14, y + 7);  // 3格
-    case 2:
-      u8g2.drawLine(x + 11, y + 15, x + 11, y + 9);  // 2格
-    case 1:
-      u8g2.drawLine(x + 8, y + 15, x + 8, y + 11);  // 1格
-    case 0:
-      u8g2.drawLine(x + 5, y + 15, x + 5, y + 13);  // 0格
-      break;
-  }
-  u8g2.setFont(u8g2_font_5x7_tf);
-  switch (status & 0xff) {
-    case 0:
-      //   u8g2.drawLine(x, y + 17, x + 20, y);  // 无信号
-      break;
-    case 1:
-      u8g2.drawStr(x + 8, y + 7, "3G");  //
-      break;
-    case 2:
-      u8g2.drawStr(x + 8, y + 7, "4G");  //
-      break;
-    case 3:
-      u8g2.drawStr(x + 8, y + 7, "5G");  //
-      break;
-    default:
-      break;
-  }
-}
-
-// 绘制WiFi符号 宽度26 高度20
-void drawWiFiStatus(uint8_t cx, uint8_t cy, int status) {
-
-  // 改动，将所有的图标起始坐标放左上角
-  // 绘制WiFi符号
-  switch (status) {
-    case 0:
-      u8g2.drawLine(cx, cy + 16, cx + 12, cy);  // 绘制直线
-    case 4:
-      drawArc(cx + 10, cy + 13, 12, -150, -30);  // 第三个弧线
-    case 3:
-      drawArc(cx + 10, cy + 13, 8, -150, -30);  // 第二个弧线
-    case 2:
-      drawArc(cx + 10, cy + 13, 4, -150, -30);  // 第一个弧线
-    case 1:
-      u8g2.drawCircle(cx + 10, cy + 13, 2, U8G2_DRAW_ALL);  // 中心小圆
-      break;
-  }
-}
-
-// 绘制电源插头 实际宽15   高22
-void drawChargerConnected(uint8_t x, uint8_t y) {
-
-  u8g2.drawFrame(x, y + 5, 15, 8);
-  u8g2.drawFrame(x + 4, y + 13, 7, 4);
-  u8g2.drawBox(x + 4, y, 2, 5);
-  u8g2.drawBox(x + 10, y, 2, 5);
-  u8g2.drawBox(x + 6, y + 17, 2, 5);
-}
-
-// 电池图标  宽31 高12
-void drawBatteryLevel(uint8_t x, uint8_t y, uint8_t level) {
-  // 根据level填充电池
-  int w = 26;
-  int h = 12;
-  u8g2.drawFrame(x, y, w, h);                            // 电池框
-  u8g2.drawBox(x + w, y + 4, 2, 4);                      // 电池头
-  u8g2.drawBox(x + 2, y + 2, (w - 4) * level / 100, 8);  // 电量
-}
-
-// 绘制热点图标 宽度25 高度20
-void drawWiFiHotspot(uint8_t x, uint8_t y, int count) {
-  // 修正起点
-
-  u8g2.drawCircle(x + 8, y + 9, 2, U8G2_DRAW_ALL);  // 中心小圆
-  drawArc(x + 8, y + 9, 5, -250, 60);               // 第一个弧线
-  drawArc(x + 8, y + 9, 9, -250, 60);               // 第二个弧线
-
-  char countStr[4];  // 最多3位数，再加上结束符'\0'
-  snprintf(countStr, sizeof(countStr), "%d", count);
-
-  u8g2.setFont(u8g2_font_5x7_tf);
-  u8g2.drawStr(x + 6, y + 20, countStr);  // 链接的节点数量
-}
-
-
-void fullSreenShow(char*  cmd)
-{
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy16_t_gb2312b);
-    if(u8g2.getDisplayWidth() > u8g2.getStrWidth(cmd)*2)
-    {
-      u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(cmd) * 2) / 2, u8g2.getDisplayHeight() / 2);
-      u8g2.print(cmd);
-    }else
-    {
-      int linecount = u8g2.getStrWidth(cmd) * 2 / u8g2.getDisplayWidth() + 1;
-      u8g2.setCursor(40, u8g2.getDisplayHeight() / 2-10);
-      u8g2.print("系统急停，请确认状态！");
-      
-      u8g2.setCursor(32, u8g2.getDisplayHeight() / 2+10);
-      u8g2.print("长按开机键解除急停状态。");
-    }
-
-    u8g2.sendBuffer();
-}
 
 char macaddr[50];   //mac地址
 char version[50];   //版本号
@@ -292,17 +145,10 @@ int parse_str() {
       Serial.println("json has cmd");
       if (!strcmp("factory reset", doc["command"])) {
         Serial.println("json type cmd");
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_wqy16_t_gb2312b);
         char str1[30];
         strcpy(str1, "系统重置，耗时较长！");
         char str2[30];
         strcpy(str2,  "请耐心等待。。。");
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(str1) * 2) / 2, u8g2.getDisplayHeight() / 2 - 8);
-        u8g2.print(str1);
-        u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth(str2) * 2) / 2, u8g2.getDisplayHeight() / 2 + 8);
-        u8g2.print(str2);
-        u8g2.sendBuffer();
         wdt.RefreshWatchdog();
         delay(3000);
         wdt.RefreshWatchdog();
@@ -507,8 +353,13 @@ void setup(void) {
     delay(1);
   }
 
+  g_dbg_serial.println(String("\n\nstart to run: ") + String(gs_wifi_mc_ver_str));
 
-  g_dbg_serial.println(String("init Adafruit VL53L0X......") + String(gs_wifi_mc_ver_str));
+  String wifi_status_str = String("WiFi status:") + String(WiFi.status());
+  g_dbg_serial.println(wifi_status_str);
+  printMacAddress();
+
+  g_dbg_serial.println(F("init Adafruit VL53L0X......"));
   //if (!lox.begin(VL53L0X_I2C_ADDR, true, &Wire)) {
   if (!lox.begin()) {
     Serial.println(F("Failed to boot VL53L0X"));
@@ -527,36 +378,43 @@ void setup(void) {
 long lastsend;
 
 void loop(void) {
+  static uint32_t ls_scan_dura = 0;
   //急停状态，只显示急停  别的不显示
   while (atoi(regValue[Addr4]) & 0x10) {
-    fullSreenShow("系统急停，请确认状态后,长按开机键解除急停!");
+    //"系统急停，请确认状态后,长按开机键解除急停!"
   }
   // 平均值
   int average = calc_dis();
   g_dbg_serial.print(F("distance:"));
   g_dbg_serial.println(average);
 
+  if(ls_scan_dura % 3 == 0)
+  {
+    scan_wifi_aps();
+  }
+  ++ls_scan_dura;
+
   parse_str();
   int iconIndex = 1;
-  drawBatteryLevel(256 - 28 * iconIndex, 0, atof(regValue[Addr14]));  //电池
+    //电池
   iconIndex++;
   if (atoi(regValue[Addr106]) != 0xFF) {
-    drawWiFiHotspot(256 - 25 * iconIndex, 0, atoi(regValue[Addr106]));  // 中心位置起 数据位置不对
+      // 中心位置起 数据位置不对
     iconIndex++;
   }
   if (atoi(regValue[Addr109]) & 0x4) {
-    drawWiFiStatus(256 - 25 * iconIndex, 0, atoi(regValue[Addr108]) & 0xff);  //wan侧WiFi
+      //wan侧WiFi
     iconIndex++;
   }
   if (atoi(regValue[Addr109]) & 0x8) {
-    drawCellStatus(256 - 25 * iconIndex, 0, atoi(regValue[Addr107]));  //蜂窝信号
+      //蜂窝信号
   }
   if (atoi(regValue[Addr109]) & 0x1) {
-    drawChargerConnected(240, 24);  //插充电器
+      //插充电器
   }
 
   if (!(atoi(regValue[Addr109]) & 0x10)) {
-    drawNoSIM(215, 24);  //无sim卡
+      //无sim卡
   }
 
   //  if ((atoi(regValue[Addr10]) || (millis() - lastsend) > 2000)) {
@@ -572,5 +430,5 @@ void loop(void) {
     serializeJson(doc, Serial1);
   }
   wdt.RefreshWatchdog();
-  delay(30);
+  delay(2000);
 }
