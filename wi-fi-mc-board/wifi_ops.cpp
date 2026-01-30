@@ -20,7 +20,7 @@ void wifi_init()
 
 wl_status_t curr_wifi_status()
 {
-    return gs_wifi_status;
+    return (gs_wifi_status = (wl_status_t)WiFi.status());
 }
 
 wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy)

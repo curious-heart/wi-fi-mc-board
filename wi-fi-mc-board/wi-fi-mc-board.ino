@@ -8,8 +8,9 @@
 // #include "BLEWifiConfigService.h"
 
 #include "wifi_ops.h"
+#include "debug_ctrl.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00j";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00b";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 115200;
@@ -383,6 +384,28 @@ void loop(void) {
   while (atoi(regValue[Addr4]) & 0x10) {
     //"系统急停，请确认状态后,长按开机键解除急停!"
   }
+
+  wifi_init();
+
+  /*
+      maitain network
+  */
+  if(((ls_scan_dura % 5) == 0) && (WL_CONNECTED != curr_wifi_status()))
+  {
+    DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
+    connect_wifi("GKXG-DR-896D34", "12345678");
+    DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
+  }
+
+  /*
+  maitain network
+  process hard-key
+  process msg from screen
+  process msg from modbus client
+  read tof distance measurement
+  timer (refresh screen)
+  */
+
   // 平均值
   int average = calc_dis();
   g_dbg_serial.print(F("distance:"));
