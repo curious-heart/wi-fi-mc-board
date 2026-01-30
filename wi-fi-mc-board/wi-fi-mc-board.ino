@@ -9,8 +9,9 @@
 
 #include "wifi_ops.h"
 #include "debug_ctrl.h"
+#include "json_msg_proc.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00b";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00j";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 115200;
@@ -114,7 +115,7 @@ int parse_str() {
       Serial.println("json_type found in JSON");
   } else {
     Serial.print(F("deserializeJson() failed: "));
-    Serial.print("return -1");
+    Serial.print(F("return -1"));
     return -1;
   }
 
@@ -374,6 +375,8 @@ void setup(void) {
 
   pinMode(BLC, OUTPUT);
   digitalWrite(BLC, LOW);
+
+  wifi_init();
 }
 
 long lastsend;
@@ -385,7 +388,15 @@ void loop(void) {
     //"系统急停，请确认状态后,长按开机键解除急停!"
   }
 
-  wifi_init();
+
+  /*
+  maitain network
+  process hard-key
+  process (json) msg from screen
+  process msg from modbus client
+  read tof distance measurement
+  timer (refresh screen)
+  */
 
   /*
       maitain network
@@ -393,18 +404,14 @@ void loop(void) {
   if(((ls_scan_dura % 5) == 0) && (WL_CONNECTED != curr_wifi_status()))
   {
     DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
-    connect_wifi("GKXG-DR-896D34", "12345678");
+    connect_wifi();
     DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
   }
 
   /*
-  maitain network
-  process hard-key
-  process msg from screen
-  process msg from modbus client
-  read tof distance measurement
-  timer (refresh screen)
+      process (json) msg from screen
   */
+  json_msg_recv_proc(g_dbg_serial); //in debug, use g_dbg_serial. actually, g_scrn_serial should be used.
 
   // 平均值
   int average = calc_dis();
@@ -417,7 +424,7 @@ void loop(void) {
   }
   ++ls_scan_dura;
 
-  parse_str();
+  //parse_str();
   int iconIndex = 1;
     //电池
   iconIndex++;

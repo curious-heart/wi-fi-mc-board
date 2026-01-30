@@ -1,0 +1,214 @@
+#include <Arduino.h>
+
+#include "common_defs.h"
+#include "debug_ctrl.h"
+#include "json_msg_proc.h"
+#include "json_keys.h"
+
+#define JSON_RX_BUF_SIZE 1024
+
+/*
+ * NOTE:
+ * This function is NOT thread-safe.
+ *
+ * It uses internal static buffers and state variables to maintain
+ * incremental receive and parse state across calls.
+ *
+ * Therefore:
+ *   - It MUST be called from a single thread or execution context only.
+ *   - Concurrent calls, re-entrant calls, or calls from multiple threads (or ISRs) are strictly FORBIDDEN.
+ *
+ * Typical and intended usage:
+ *   - Called repeatedly from the main loop() in Arduino-style
+ *     single-threaded environments.
+ */
+const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, size_t * msg_len_ptr)
+{
+#define RESTART_RECV \
+    {\
+        data_start = data_end = 0; \
+        depth = 0; \
+        in_string = false; \
+        escape = false; \
+        in_msg = false; \
+    }
+
+    static char   rx_buf[JSON_RX_BUF_SIZE + 1];
+    static char   msg_buf[MAX_JSON_MSG_LEN + 1];
+
+    static size_t data_start = 0;  // 未处理数据起点
+    static size_t data_end   = 0;  // 已写入数据尾
+
+    static int    depth      = 0;
+    static bool   in_msg = false;
+    static bool   in_string  = false;
+    static bool   escape     = false;
+
+    const char* last_msg_ptr = nullptr;
+    size_t      last_msg_len = 0;
+
+    if (msg_len_ptr) { *msg_len_ptr = 0; }
+
+    /* ---------- 读取串口数据 ---------- */
+    while (sport.available() > 0)
+    {
+        // 尾部没空间，尝试压缩
+        if (data_end >= JSON_RX_BUF_SIZE)
+        {
+            if (data_start > 0)
+            {
+                size_t remain = data_end - data_start;
+                memmove(rx_buf, rx_buf + data_start, remain);
+                data_end   = remain;
+                data_start = 0;
+            }
+            else
+            {
+                // 缓冲区满且无法压缩，直接丢弃
+                RESTART_RECV;
+
+                DBG_PRINTLN(LOG_WARN, F("json recv buffer full. discard buffer data."));
+            }
+
+            // 压缩后仍然没空间，放弃本次读取 //正常不会走到这个分支
+            if (data_end >= JSON_RX_BUF_SIZE)
+            {
+                RESTART_RECV;
+                break;
+            }
+        }
+
+        char c = (char)sport.read();
+
+        // 未进入 JSON，丢弃 '{' 之前的字符
+        if (!in_msg && c != '{') { continue; }
+
+        // 遇到 '{'，开始记录
+        if (!in_msg && c == '{')
+        {
+            in_msg = true;
+
+            in_string = false;
+            escape = false;
+            data_start = data_end;
+            rx_buf[data_end++] = c;
+            continue;
+        }
+
+        rx_buf[data_end++] = c;
+    }
+    DBG_PRINTLN(LOG_INFO, rx_buf);
+    DBG_PRINT(LOG_INFO, F("data_start: ")); DBG_PRINTLN(LOG_INFO, data_start);
+    DBG_PRINT(LOG_INFO, F("data_end: ")); DBG_PRINTLN(LOG_INFO, data_end);
+
+    /* ---------- 扫描并解析 JSON ---------- */
+    size_t i = data_start;
+    while (i < data_end)
+    {
+        char c = rx_buf[i];
+        if (in_string)
+        {
+            if (escape) { escape = false; } 
+            else if (c == '\\') { escape = true; } 
+            else if (c == '"') { in_string = false; }
+        }
+        else
+        {
+            if (c == '"') { in_string = true; } 
+            else if (c == '{') { depth++; in_msg = true;} 
+            else if (c == '}')
+            {
+                DBG_PRINT(LOG_INFO, F("depth: ")); DBG_PRINTLN(LOG_INFO, depth);
+                DBG_PRINT(LOG_INFO, F("i: ")); DBG_PRINTLN(LOG_INFO, i);
+
+                depth--;
+                if (depth == 0)
+                {
+                    // 完整 JSON 结束
+                    size_t msg_len = i - data_start + 1;
+                    if (msg_len <= MAX_JSON_MSG_LEN)
+                    {
+                        memcpy(msg_buf, rx_buf + data_start, msg_len);
+                        msg_buf[msg_len] = '\0';
+
+                        if (hdlr) { hdlr(msg_buf); }
+
+                        last_msg_ptr = msg_buf;
+                        last_msg_len = msg_len;
+                    }
+                    // 移动 data_start 到下一个字符
+                    data_start = i + 1;
+                    in_msg = false;
+                }
+            }
+        }
+        i++;
+    }
+
+    /* ---------- 更新返回信息 ---------- */
+    if (last_msg_ptr && msg_len_ptr)
+    {
+        *msg_len_ptr = last_msg_len;
+    }
+
+    return last_msg_ptr;
+
+#undef RESTART_RECV
+}
+
+typedef struct
+{
+    const char* msg_type;
+    json_doc_hdlr hdlr;
+}json_msg_type_hdlr_map_t;
+
+void connect_wifi(JsonDocument& ssid_key);
+static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
+{
+    {JSON_VAL_TYPE_CONN_AP, connect_wifi},
+    {nullptr, nullptr},
+};
+
+void json_msg_handler_dispatcher(const char * msg)
+{
+    if(!msg)
+    {
+        DBG_PRINTLN(LOG_ERROR, F("json msg string is NULL."));
+        return;
+    }
+
+    DBG_PRINTLN(LOG_INFO, F("a complete json msg:"));
+    DBG_PRINTLN(LOG_INFO, msg);
+
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, msg);
+    if(error)
+    {
+        DBG_PRINT(LOG_ERROR, F("deserialize json error:"));
+        DBG_PRINTLN(LOG_ERROR, error.c_str());
+        return;
+    }
+    const char* msg_type = doc[JSON_KEY_JSON_TYPE];
+    bool handled = false;
+    for(int idx = 0; gs_json_msg_handler_map[idx].msg_type && gs_json_msg_handler_map[idx].hdlr; ++idx)
+    {
+        if(!strcmp(msg_type, gs_json_msg_handler_map[idx].msg_type))
+        {
+            gs_json_msg_handler_map[idx].hdlr(doc);
+            handled = true;
+            break;
+        }
+    }
+
+    if(!handled)
+    {
+        DBG_PRINT(LOG_WARN, F("Unknown msg type:"));
+        DBG_PRINTLN(LOG_WARN, msg_type);
+    }
+    else
+    {
+        DBG_PRINT(LOG_INFO, F("Msg handled: "));
+        DBG_PRINTLN(LOG_INFO, msg_type);
+    }
+}
+

@@ -45,15 +45,17 @@ wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy)
     return gs_wifi_status;
 }
 
-wl_status_t connect_wifi(JsonObject ssid_key)
+void connect_wifi(JsonDocument& ssid_key)
 {
     gs_wifi_status = connect_wifi(ssid_key[JSON_KEY_SSID], ssid_key[JSON_KEY_WIFI_PWD], true);
-    return gs_wifi_status;
 }
 
 wl_status_t connect_wifi()
 {
-    gs_wifi_status = connect_wifi(gs_curr_wifi_ssid_pwd.ssid, gs_curr_wifi_ssid_pwd.pwd, false);
+    if(strlen(gs_curr_wifi_ssid_pwd.ssid) > 0)
+    {
+        gs_wifi_status = connect_wifi(gs_curr_wifi_ssid_pwd.ssid, gs_curr_wifi_ssid_pwd.pwd, false);
+    }
     return gs_wifi_status;
 }
 

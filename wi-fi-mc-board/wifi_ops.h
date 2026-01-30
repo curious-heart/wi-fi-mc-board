@@ -19,7 +19,7 @@ void scan_wifi_aps();
 void printMacAddress();
 
 wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy = true);
-wl_status_t connect_wifi(JsonObject ssid_key);
+void connect_wifi(JsonDocument& ssid_key);
 wl_status_t connect_wifi();
 wl_status_t disconn_wifi();
 
