@@ -28,6 +28,7 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
     {\
         data_start = data_end = 0; \
         depth = 0; \
+        curr_proc_start = 0; \
         in_string = false; \
         escape = false; \
         in_msg = false; \
@@ -38,6 +39,7 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
 
     static size_t data_start = 0;  // 未处理数据起点
     static size_t data_end   = 0;  // 已写入数据尾
+    static size_t curr_proc_start = 0;
 
     static int    depth      = 0;
     static bool   in_msg = false;
@@ -61,6 +63,7 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
                 memmove(rx_buf, rx_buf + data_start, remain);
                 data_end   = remain;
                 data_start = 0;
+                curr_proc_start = data_end;
             }
             else
             {
@@ -68,13 +71,6 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
                 RESTART_RECV;
 
                 DBG_PRINTLN(LOG_WARN, F("json recv buffer full. discard buffer data."));
-            }
-
-            // 压缩后仍然没空间，放弃本次读取 //正常不会走到这个分支
-            if (data_end >= JSON_RX_BUF_SIZE)
-            {
-                RESTART_RECV;
-                break;
             }
         }
 
@@ -88,8 +84,6 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
         {
             in_msg = true;
 
-            in_string = false;
-            escape = false;
             data_start = data_end;
             rx_buf[data_end++] = c;
             continue;
@@ -102,10 +96,16 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
     DBG_PRINT(LOG_INFO, F("data_end: ")); DBG_PRINTLN(LOG_INFO, data_end);
 
     /* ---------- 扫描并解析 JSON ---------- */
-    size_t i = data_start;
+    size_t i = curr_proc_start;
     while (i < data_end)
     {
         char c = rx_buf[i];
+        if(!in_msg && c != '{')
+        {
+            i++; data_start++;
+            continue;
+        }
+
         if (in_string)
         {
             if (escape) { escape = false; } 
@@ -139,11 +139,14 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
                     // 移动 data_start 到下一个字符
                     data_start = i + 1;
                     in_msg = false;
+
+                    in_string = escape = false;
                 }
             }
         }
         i++;
     }
+    curr_proc_start = i;
 
     /* ---------- 更新返回信息 ---------- */
     if (last_msg_ptr && msg_len_ptr)
@@ -162,9 +165,11 @@ typedef struct
     json_doc_hdlr hdlr;
 }json_msg_type_hdlr_map_t;
 
+void scan_wifi_aps(JsonDocument& scan_json_doc);
 void connect_wifi(JsonDocument& ssid_key);
 static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
 {
+    {JSON_VAL_TYPE_SCAN_WIFI, scan_wifi_aps},
     {JSON_VAL_TYPE_CONN_AP, connect_wifi},
     {nullptr, nullptr},
 };

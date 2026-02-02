@@ -144,7 +144,7 @@ static void build_ap_list_json(String &json_msg_string)
     wdt.RefreshWatchdog();
 }
 
-void scan_wifi_aps()
+void scan_wifi_aps(JsonDocument& scan_json_doc)
 {
     String scan_result;
     build_ap_list_json(scan_result);

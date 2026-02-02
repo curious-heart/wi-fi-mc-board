@@ -15,7 +15,7 @@ typedef struct
 wl_status_t curr_wifi_status();
 void wifi_init();
 
-void scan_wifi_aps();
+void scan_wifi_aps(JsonDocument& scan_json_doc);
 void printMacAddress();
 
 wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy = true);

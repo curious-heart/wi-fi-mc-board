@@ -6,6 +6,7 @@
 #define JSON_KEY_LIST \
     JSON_KEY(JSON_KEY_JSON_TYPE, "json_type") \
     JSON_KEY(JSON_VAL_TYPE_AP_LIST, "wifi_ap_list") \
+    JSON_KEY(JSON_VAL_TYPE_SCAN_WIFI, "scan_wifi") \
     JSON_KEY(JSON_VAL_TYPE_CONN_AP, "conn_wifi_ap") \
     JSON_KEY(JSON_VAL_TYPE_DISCONN_AP, "disconn_wifi") \
     JSON_KEY(JSON_VAL_TYPE_REG, "register") \
