@@ -11,4 +11,7 @@ extern WDT wdt;
 
 #define HEXD_2_CH_CAP(x) ((0 <= (x) && (x) <= 9)) ? ((x) + '0') : ((x) - 10 + 'A')
 
+#define UINT16_HTONS(d) (uint16_t)(((d) << 8) | ((d) & 0x0F))
+#define UINT16_NSTOH(d) UINT16_HTONS(d)
+
 #endif

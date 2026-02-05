@@ -11,6 +11,8 @@
 #include "debug_ctrl.h"
 #include "json_msg_proc.h"
 
+#include "modbus_ops.h"
+
 constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00e";
 
 static constexpr long gs_scrn_serial_baud = 115200;
@@ -415,10 +417,16 @@ void loop(void) {
   */
   json_msg_recv_proc(g_scrn_serial);
 
+
+  /*
+    process msg from modbus client
+  */
+   modbus_tcp_server();
+
   // 平均值
-  int average = calc_dis();
-  g_dbg_serial.print(F("distance:"));
-  g_dbg_serial.println(average);
+  //int average = calc_dis();
+  //g_dbg_serial.print(F("distance:"));
+  //g_dbg_serial.println(average);
 
 
   //parse_str();
@@ -445,6 +453,7 @@ void loop(void) {
   }
 
   //  if ((atoi(regValue[Addr10]) || (millis() - lastsend) > 2000)) {
+/*
   if ((millis() - lastsend) > 2000) {
 
     lastsend = millis();
@@ -456,6 +465,7 @@ void loop(void) {
     // Generate the minified JSON and send it to the Serial port
     serializeJson(doc, Serial1);
   }
+*/
   wdt.RefreshWatchdog();
-  delay(2000);
+  //delay(2000);
 }
