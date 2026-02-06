@@ -22,6 +22,14 @@ typedef enum
 #define RTU_TIMEOUT_MS 200
 #define MODBUS_RTU_SRV_ADDR 1
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr = MODBUS_RTU_SRV_ADDR);
-void read_rtu_response(unsigned long send_time, bool ack_tcp = true, uint32_t timout_ms = RTU_TIMEOUT_MS);
+
+/*
+ * rtu_pdu: OUT. buffer holding pdu read.
+ * pdu_len: OUT. holding pdu len.
+ * */
+bool read_rtu_response(uint8_t ** rtu_pdu = nullptr, uint16_t *pdu_len = nullptr, uint32_t timeout_ms = RTU_TIMEOUT_MS);
+
+#define UINT16_HI_BYTE(d) ((uint8_t)((d) >> 8))
+#define UINT16_LO_BYTE(d) ((uint8_t)((d) & 0xFF))
 
 #endif

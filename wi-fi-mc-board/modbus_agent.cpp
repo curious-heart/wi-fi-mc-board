@@ -69,7 +69,7 @@ static unsigned long rtuSendTime = 0;
 static int activeClient = -1;
 
 static uint8_t rtuRxBuf[gs_mb_max_rtu_adu_len];
-static void sendTCPResponse(int idx, uint16_t rtu_adu_len)
+static void send_tcp_response(int idx, uint16_t rtu_adu_len)
 {
   WiFiClient& c = tcpClients[idx];
   ClientCtx&  x = ctx[idx];
@@ -86,7 +86,7 @@ static void sendTCPResponse(int idx, uint16_t rtu_adu_len)
   c.write(&rtuRxBuf[1], pduLen);
 }
 
-static void sendException(int idx, uint8_t fc, uint8_t code)
+static void send_tcp_exception(int idx, uint8_t fc, uint8_t code)
 {
   WiFiClient& c = tcpClients[idx];
   ClientCtx&  x = ctx[idx];
@@ -105,7 +105,7 @@ static void sendException(int idx, uint8_t fc, uint8_t code)
   c.write(pdu, gs_mb_excption_resp_pdu_len);
 }
 
-static bool pollRTUResponse(bool ack_tcp = true)
+static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = nullptr)
 {
     static uint16_t rtuRxLen = 0;
 
@@ -127,7 +127,7 @@ static bool pollRTUResponse(bool ack_tcp = true)
         }
     }
 
-    bool complete_resp = false;
+    bool complete_resp = false, crc_ok = false;
     if (rtuRxLen >= gs_mb_min_rtu_resp_adu_len)
     {
         uint16_t expect_len = 0;
@@ -160,71 +160,82 @@ static bool pollRTUResponse(bool ack_tcp = true)
 
         if(complete_resp)
         {
+            uint16_t crcCalc = modbus_crc16(rtuRxBuf, expect_len - 2);
+            uint16_t crcRecv = rtuRxBuf[expect_len - 2] |
+                               (rtuRxBuf[expect_len - 1] << 8);
+
+            crc_ok = (crcCalc == crcRecv); 
             rtuRxLen = 0;
 
-            if(ack_tcp)
-            {
-                uint16_t crcCalc = modbus_crc16(rtuRxBuf, expect_len - 2);
-                uint16_t crcRecv = rtuRxBuf[expect_len - 2] |
-                                   (rtuRxBuf[expect_len - 1] << 8);
-
-                if (crcCalc == crcRecv)
-                {
-                    sendTCPResponse(activeClient, expect_len);
-                }
-                else
-                {
-                    sendException(activeClient, ctx[activeClient].pdu[0], MB_GW_TGT_DEV_FAILED_TO_RESP);
-                }
-                ctx[activeClient].busy = false;
-                activeClient = -1;
-                gwState = GW_IDLE;
-            }
+            if(pdu_len) *pdu_len = expect_len - 3; //omitint the 1st 1 addr byte and the last 2 crc bytes.
         }
     }
 
+    if(crc_ret) *crc_ret = crc_ok;
     return complete_resp;
 }
 
-
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 {
-    uint8_t rtuBuf[gs_mb_rtu_addr_len + gs_mb_max_pdu_len + gs_mb_rtu_crc_len];
+    uint8_t rtuTxBuf[gs_mb_rtu_addr_len + gs_mb_max_pdu_len + gs_mb_rtu_crc_len];
     uint16_t len = 0;
 
     if(!rtu_pdu || pdu_len > gs_mb_max_pdu_len)
     {
         return false;
     }
-    rtuBuf[len++] = addr;
-    memcpy(&rtuBuf[len], rtu_pdu, pdu_len);
+    rtuTxBuf[len++] = addr;
+    memcpy(&rtuTxBuf[len], rtu_pdu, pdu_len);
     len += pdu_len;
 
-    uint16_t crc = modbus_crc16(rtuBuf, len);
-    rtuBuf[len++] = crc & 0xFF;
-    rtuBuf[len++] = crc >> 8;
+    uint16_t crc = modbus_crc16(rtuTxBuf, len);
+    rtuTxBuf[len++] = crc & 0xFF;
+    rtuTxBuf[len++] = crc >> 8;
 
-    g_pdb_serial.write(rtuBuf, len);
+    g_pdb_serial.write(rtuTxBuf, len);
 
     rtuSendTime = millis();
     return true;
 }
 
-void read_rtu_response(unsigned long send_time, bool ack_tcp, uint32_t timeout_ms)
+bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeout_ms)
 {
-    while(!pollRTUResponse(ack_tcp))
+    bool complet_msg = false, crc_ok = false, timeout = false;
+    uint16_t pdu_len = 0;
+    while(!(complet_msg = poll_rtu_response(&crc_ok, &pdu_len)))
     {
         uint32_t curr = millis();
-        if(curr - send_time >= timeout_ms)
+        if(curr - rtuSendTime >= timeout_ms)
         {
-            if(ack_tcp) sendException(activeClient, ctx[activeClient].pdu[0], MB_GW_TGT_DEV_FAILED_TO_RESP);
-
+            timeout = true;
             break;
         }
     }
+    if(rtu_pdu) *rtu_pdu = &rtuRxBuf[1];
+    if(pdu_len_ptr) *pdu_len_ptr = pdu_len;
+    return (complet_msg && crc_ok && !timeout);
 }
 
-static void tryHandleTCPRequest(int idx)
+static void handle_tcp_response()
+{
+    uint16_t pdu_len;
+    bool ret = read_rtu_response(nullptr, &pdu_len);
+
+    if(ret)
+    {
+        send_tcp_response(activeClient, pdu_len + 3); //pdu_len + 3 is adu_len. 3: 1 byte of addr, 2 bytes of crc.
+    }
+    else
+    {
+        send_tcp_exception(activeClient, ctx[activeClient].pdu[0], MB_GW_TGT_DEV_FAILED_TO_RESP);
+    }
+
+    ctx[activeClient].busy = false;
+    activeClient = -1;
+    gwState = GW_IDLE;
+}
+
+static void try_handle_tcp_request(int idx)
 {
     WiFiClient& c = tcpClients[idx];
     ClientCtx&  x = ctx[idx];
@@ -244,7 +255,7 @@ static void tryHandleTCPRequest(int idx)
     uint8_t fc = x.pdu[0];
     if(!IS_VALID_MB_FUNC_CODE(fc))
     {
-        sendException(idx, fc, MB_EXCP_ILLEGAL_FUNC);
+        send_tcp_exception(idx, fc, MB_EXCP_ILLEGAL_FUNC);
         return;
     }
 
@@ -255,7 +266,7 @@ static void tryHandleTCPRequest(int idx)
     gwState = GW_WAIT_RTU;
 }
 
-static void cleanupClient(int idx)
+static void cleanup_tcp_client(int idx)
 {
     if (tcpClients[idx])
     {
@@ -270,7 +281,7 @@ static void cleanupClient(int idx)
     }
 }
 
-static void acceptNewClients()
+static void accept_new_clients()
 {
   WiFiClient newClient = mbServer.available();
   if (!newClient) return;
@@ -289,23 +300,23 @@ static void acceptNewClients()
 
 void modbus_tcp_server()
 {
-    acceptNewClients();
+    accept_new_clients();
 
     // 轮询每个 TCP client
     for (int i = 0; i < MAX_TCP_CLIENTS; i++)
     {
         if (!tcpClients[i] || !tcpClients[i].connected())
         {
-            cleanupClient(i);
+            cleanup_tcp_client(i);
             continue;
         }
 
         if (!ctx[i].busy && gwState == GW_IDLE)
         {
-            tryHandleTCPRequest(i);
+            try_handle_tcp_request(i);
             if (gwState == GW_WAIT_RTU)
             {
-                read_rtu_response(rtuSendTime);
+                handle_tcp_response();
             }
         }
     }
@@ -314,15 +325,76 @@ void modbus_tcp_server()
 bool hv_controller_write_single_reg(uint16_t reg_addr, uint16_t value)
 {
     uint8_t pdu[5]; //1 byte func_code + 2 byte reg_addr + 2 byte value
-    return true;
+    int pos = 0;
+    bool ret;
+
+    pdu[pos++] = MB_FUNC_CODE_WRITE_SINGLE_REG;
+    pdu[pos++] = UINT16_HI_BYTE(reg_addr);
+    pdu[pos++] = UINT16_LO_BYTE(reg_addr); //addr
+    pdu[pos++] = UINT16_HI_BYTE(value);
+    pdu[pos++] = UINT16_LO_BYTE(value); //value
+
+    ret = send_mb_rtu_request(pdu, sizeof(pdu));
+    if(ret) ret = read_rtu_response();
+    return ret;
 }
 
-bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int len)
+bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int reg_cnt)
 {
-    return true;
+    uint8_t pdu[gs_mb_max_pdu_len];
+    int pdu_len = 0;
+    bool ret = false;
+
+     //6: 1 byte of func code; 2 bytes of start addr, 2 bytes of reg cnt, 1 byte of byte count
+    if(!buf || (reg_cnt * 2 + 6 > sizeof(pdu))) return false;
+
+    pdu[pdu_len++] = MB_FUNC_CODE_WRITE_MULI_REGS;
+    pdu[pdu_len++] = UINT16_HI_BYTE(reg_addr_start);
+    pdu[pdu_len++] = UINT16_LO_BYTE(reg_addr_start); //start addr
+    pdu[pdu_len++] = UINT16_HI_BYTE(reg_cnt);
+    pdu[pdu_len++] = UINT16_LO_BYTE(reg_cnt); //reg_cnt
+    pdu[pdu_len++] = 2 * reg_cnt;
+    for(int idx = 0; idx < reg_cnt; ++idx)
+    {
+        pdu[pdu_len++] = UINT16_HI_BYTE(buf[idx]);
+        pdu[pdu_len++] = UINT16_LO_BYTE(buf[idx]);
+    }
+
+    ret = send_mb_rtu_request(pdu, pdu_len);
+    if(ret) ret = read_rtu_response();
+    return ret;
 }
 
-bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int len)
+bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cnt)
 {
-    return true;
+    uint8_t req_pdu[5]; //1 byte func_code + 2 byte start addr + 2 byte reg cnt
+    int pos = 0;
+    bool ret;
+
+    req_pdu[pos++] = MB_FUNC_CODE_READ_HREG;
+    req_pdu[pos++] = UINT16_HI_BYTE(reg_addr_start);
+    req_pdu[pos++] = UINT16_LO_BYTE(reg_addr_start); //start addr
+    req_pdu[pos++] = UINT16_HI_BYTE(reg_cnt);
+    req_pdu[pos++] = UINT16_LO_BYTE(reg_cnt); //reg_cnt
+
+    ret = send_mb_rtu_request(req_pdu, sizeof(req_pdu));
+    if(ret)
+    {
+        uint8_t * resp_pdu_ptr;
+        uint16_t resp_pdu_len;
+        ret = read_rtu_response(&resp_pdu_ptr, &resp_pdu_len);
+        if(ret && buf)
+        {
+            /*resp pdu ptr: 1 byte of func code, 1 byte of byte count, then followed by data bytes.*/
+            int byte_cnt_in_pdu = (int)(resp_pdu_ptr[1]);
+            if(byte_cnt_in_pdu != reg_cnt * 2) return false;
+
+            uint8_t *val_byte_ptr = &resp_pdu_ptr[2];
+            for(int idx = 0; idx < reg_cnt; ++idx)
+            {
+                buf[idx] = (uint16_t)((val_byte_ptr[2*idx] << 8) | (val_byte_ptr[2*idx + 1]));
+            }
+        }
+    }
+    return ret;
 }
