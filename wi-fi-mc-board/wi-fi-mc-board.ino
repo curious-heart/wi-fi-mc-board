@@ -421,7 +421,7 @@ void loop(void) {
   /*
     process msg from modbus client
   */
-   modbus_tcp_server();
+   modbus_tcp_server(WL_CONNECTED == curr_wifi_status());
 
   // 平均值
   //int average = calc_dis();

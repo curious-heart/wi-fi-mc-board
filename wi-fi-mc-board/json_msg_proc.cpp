@@ -91,9 +91,6 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
 
         rx_buf[data_end++] = c;
     }
-    DBG_PRINTLN(LOG_INFO, rx_buf);
-    DBG_PRINT(LOG_INFO, F("data_start: ")); DBG_PRINTLN(LOG_INFO, data_start);
-    DBG_PRINT(LOG_INFO, F("data_end: ")); DBG_PRINTLN(LOG_INFO, data_end);
 
     /* ---------- 扫描并解析 JSON ---------- */
     size_t i = curr_proc_start;
@@ -118,9 +115,6 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t hdlr, si
             else if (c == '{') { depth++; in_msg = true;} 
             else if (c == '}')
             {
-                DBG_PRINT(LOG_INFO, F("depth: ")); DBG_PRINTLN(LOG_INFO, depth);
-                DBG_PRINT(LOG_INFO, F("i: ")); DBG_PRINTLN(LOG_INFO, i);
-
                 depth--;
                 if (depth == 0)
                 {

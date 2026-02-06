@@ -4,6 +4,8 @@
 #include "common_defs.h"
 #include "modbus_internal.h"
 
+#include "debug_ctrl.h"
+
 #define MODBUS_TCP_PORT 502
 
 #define RTU_BAUDRATE   9600
@@ -71,38 +73,38 @@ static int activeClient = -1;
 static uint8_t rtuRxBuf[gs_mb_max_rtu_adu_len];
 static void send_tcp_response(int idx, uint16_t rtu_adu_len)
 {
-  WiFiClient& c = tcpClients[idx];
-  ClientCtx&  x = ctx[idx];
+    WiFiClient& c = tcpClients[idx];
+    ClientCtx&  x = ctx[idx];
 
-  uint8_t pduLen = rtu_adu_len - 3; /*1 byte addr plus 2 bytes crc.*/
+    uint8_t pduLen = rtu_adu_len - 3; /*1 byte addr plus 2 bytes crc.*/
 
-  MBAP mbap;
-  mbap.transId = UINT16_HTONS(x.mbap.transId);
-  mbap.protoId = 0;
-  mbap.length  = UINT16_HTONS(pduLen + 1);
-  mbap.unitId  = rtuRxBuf[0];
+    MBAP mbap;
+    mbap.transId = UINT16_HTONS(x.mbap.transId);
+    mbap.protoId = 0;
+    mbap.length  = UINT16_HTONS(pduLen + 1);
+    mbap.unitId  = rtuRxBuf[0];
 
-  c.write((uint8_t*)&mbap, gs_mb_tcp_mbap_len);
-  c.write(&rtuRxBuf[1], pduLen);
+    c.write((uint8_t*)&mbap, gs_mb_tcp_mbap_len);
+    c.write(&rtuRxBuf[1], pduLen);
 }
 
 static void send_tcp_exception(int idx, uint8_t fc, uint8_t code)
 {
-  WiFiClient& c = tcpClients[idx];
-  ClientCtx&  x = ctx[idx];
+    WiFiClient& c = tcpClients[idx];
+    ClientCtx&  x = ctx[idx];
 
-  MBAP mbap;
-  mbap.transId = UINT16_HTONS(x.mbap.transId);
-  mbap.protoId = 0;
-  mbap.length  = UINT16_HTONS(3);
-  mbap.unitId  = x.mbap.unitId;
+    MBAP mbap;
+    mbap.transId = UINT16_HTONS(x.mbap.transId);
+    mbap.protoId = 0;
+    mbap.length  = UINT16_HTONS(3);
+    mbap.unitId  = x.mbap.unitId;
 
-  uint8_t pdu[gs_mb_excption_resp_pdu_len];
-  pdu[0] = fc | 0x80;
-  pdu[1] = code;
+    uint8_t pdu[gs_mb_excption_resp_pdu_len];
+    pdu[0] = fc | 0x80;
+    pdu[1] = code;
 
-  c.write((uint8_t*)&mbap, gs_mb_tcp_mbap_len);
-  c.write(pdu, gs_mb_excption_resp_pdu_len);
+    c.write((uint8_t*)&mbap, gs_mb_tcp_mbap_len);
+    c.write(pdu, gs_mb_excption_resp_pdu_len);
 }
 
 static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = nullptr)
@@ -121,7 +123,7 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
         {
             rtuRxLen = 0; //buffer full. currently just discard received data. maybe do better in future.
         }
-        else
+        else if(!g_pdb_serial.available())
         {
             go_on_read = false;
         }
@@ -283,23 +285,55 @@ static void cleanup_tcp_client(int idx)
 
 static void accept_new_clients()
 {
-  WiFiClient newClient = mbServer.available();
-  if (!newClient) return;
+    WiFiClient newClient = mbServer.available();
+    if (!newClient) return;
 
-  for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
-    if (!tcpClients[i]) {
-      tcpClients[i] = newClient;
-      ctx[i].busy = false;
-      return;
+    for (int i = 0; i < MAX_TCP_CLIENTS; i++)
+    {
+        if (!tcpClients[i])
+        {
+            tcpClients[i] = newClient;
+            ctx[i].busy = false;
+            return;
+        }
     }
-  }
 
-  // 超过 2 个，直接拒绝
-  newClient.stop();
+    // 超过 2 个，直接拒绝
+    newClient.stop();
 }
 
-void modbus_tcp_server()
+static void end_server()
 {
+    for (int i = 0; i < MAX_TCP_CLIENTS; i++)
+    {
+        cleanup_tcp_client(i);
+    }
+
+    activeClient = -1;
+    gwState = GW_IDLE;
+
+    mbServer.end();
+}
+
+void modbus_tcp_server(bool work)
+{
+    static bool server_started = false;
+
+    if(!server_started && work)
+    {
+        mbServer.begin();
+        server_started = true;
+    }
+    else if(!work)
+    {
+        if(server_started)
+        {
+            end_server();
+            server_started = false;
+        }
+        return;
+    }
+
     accept_new_clients();
 
     // 轮询每个 TCP client
