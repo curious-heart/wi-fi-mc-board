@@ -13,10 +13,10 @@
 
 #include "modbus_ops.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00e";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00y";
 
 static constexpr long gs_scrn_serial_baud = 115200;
-static constexpr long gs_pdb_serial_baud = 115200;
+static constexpr long gs_pdb_serial_baud = 9600;
 
 Stream& g_scrn_serial = Serial;
 Stream& g_pdb_serial = Serial1;
@@ -334,8 +334,8 @@ char cmd[20];
 
 void setup(void) {
 
-  Serial.begin(gs_scrn_serial_baud);
-  Serial1.begin(gs_scrn_serial_baud);
+    Serial.begin(gs_scrn_serial_baud);
+    Serial1.begin(gs_pdb_serial_baud);
 
   //初始化看门狗
   wdt.InitWatchdog(gs_wdt_dura_ms);  // setup watchdog
@@ -386,11 +386,13 @@ long lastsend;
 static const uint32_t MAITAIN_NW_PERIOD = 5;
 void loop(void) {
   static uint32_t maitain_nw_cnt = 0;
+
+ /*
   //急停状态，只显示急停  别的不显示
   while (atoi(regValue[Addr4]) & 0x10) {
     //"系统急停，请确认状态后,长按开机键解除急停!"
   }
-
+*/
 
   /*
   maitain network
@@ -429,30 +431,6 @@ void loop(void) {
   //g_dbg_serial.println(average);
 
 
-  //parse_str();
-  int iconIndex = 1;
-    //电池
-  iconIndex++;
-  if (atoi(regValue[Addr106]) != 0xFF) {
-      // 中心位置起 数据位置不对
-    iconIndex++;
-  }
-  if (atoi(regValue[Addr109]) & 0x4) {
-      //wan侧WiFi
-    iconIndex++;
-  }
-  if (atoi(regValue[Addr109]) & 0x8) {
-      //蜂窝信号
-  }
-  if (atoi(regValue[Addr109]) & 0x1) {
-      //插充电器
-  }
-
-  if (!(atoi(regValue[Addr109]) & 0x10)) {
-      //无sim卡
-  }
-
-  //  if ((atoi(regValue[Addr10]) || (millis() - lastsend) > 2000)) {
 /*
   if ((millis() - lastsend) > 2000) {
 

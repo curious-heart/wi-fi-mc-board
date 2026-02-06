@@ -11,6 +11,7 @@
 #define RTU_BAUDRATE   9600
 
 static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, NON_BLOCKING_MODE);
+//static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, BLOCKING_MODE);
 #define MAX_TCP_CLIENTS 2
 static WiFiClient tcpClients[MAX_TCP_CLIENTS];
 
@@ -239,28 +240,44 @@ static void handle_tcp_response()
 
 static void try_handle_tcp_request(int idx)
 {
+    static uint8_t tcp_mb_adu_buf[gs_mb_max_tcp_adu_len];
     WiFiClient& c = tcpClients[idx];
     ClientCtx&  x = ctx[idx];
 
-    if (c.available() < (gs_mb_tcp_mbap_len + gs_mb_func_code_len)) return;
+    /*
+    DBG_PRINT(LOG_ERROR, F("try_handle_tcp_request, "));
+    DBG_PRINT(LOG_ERROR, idx); DBG_PRINT(LOG_ERROR, F(" conn state: "));
+    DBG_PRINTLN(LOG_ERROR, tcpClients[idx].connected());
+    */
 
-    c.read((uint8_t*)&x.mbap, gs_mb_tcp_mbap_len);
+    //DBG_PRINT(LOG_ERROR, F("client available: ")); DBG_PRINTLN(LOG_ERROR, c.available());
+    if (0 == c.available()) return;
+    //if (c.available() < (gs_mb_tcp_mbap_len + gs_mb_func_code_len)) return;
 
+    //int read_ret = c.read((uint8_t*)&x.mbap, gs_mb_tcp_mbap_len);
+    int read_ret = c.read(tcp_mb_adu_buf, sizeof(tcp_mb_adu_buf));
+    DBG_PRINT(LOG_ERROR, F("read return: ")); DBG_PRINTLN(LOG_ERROR, read_ret);
+
+    memcpy((uint8_t*)&x.mbap, tcp_mb_adu_buf, gs_mb_tcp_mbap_len);
     x.mbap.transId = UINT16_NSTOH(x.mbap.transId);
     x.mbap.length  = UINT16_NSTOH(x.mbap.length);
 
     x.pduLen = x.mbap.length - 1;
+    DBG_PRINT(LOG_ERROR, F("pduLen is: ")); DBG_PRINTLN(LOG_ERROR, x.pduLen);
     if (x.pduLen > sizeof(x.pdu)) return;
 
-    c.read(x.pdu, x.pduLen);
+    memcpy(x.pdu, &tcp_mb_adu_buf[gs_mb_tcp_mbap_len], x.pduLen);
+    //c.read(x.pdu, x.pduLen);
 
     uint8_t fc = x.pdu[0];
+    DBG_PRINT(LOG_ERROR, F("func code is: ")); DBG_PRINTLN(LOG_ERROR, fc);
     if(!IS_VALID_MB_FUNC_CODE(fc))
     {
         send_tcp_exception(idx, fc, MB_EXCP_ILLEGAL_FUNC);
         return;
     }
 
+    DBG_PRINTLN(LOG_ERROR, F("send mb rtu request"));
     send_mb_rtu_request(x.pdu, x.pduLen, x.mbap.unitId);
 
     x.busy = true;
@@ -272,6 +289,9 @@ static void cleanup_tcp_client(int idx)
 {
     if (tcpClients[idx])
     {
+        DBG_PRINT(LOG_ERROR, F("client stop: "));
+        DBG_PRINTLN(LOG_ERROR, idx);
+
         tcpClients[idx].stop();
     }
     ctx[idx].busy = false;
@@ -290,10 +310,19 @@ static void accept_new_clients()
 
     for (int i = 0; i < MAX_TCP_CLIENTS; i++)
     {
-        if (!tcpClients[i])
+        if (!tcpClients[i] || !tcpClients[i].connected())
         {
+            tcpClients[i].stop();
+
             tcpClients[i] = newClient;
             ctx[i].busy = false;
+
+            if(tcpClients[i].connected())
+            {
+                DBG_PRINT(LOG_ERROR, F("accept, "));
+                DBG_PRINT(LOG_ERROR, i); DBG_PRINT(LOG_ERROR, F(" conn state: "));
+                DBG_PRINTLN(LOG_ERROR, tcpClients[i].connected());
+            }
             return;
         }
     }
@@ -304,6 +333,7 @@ static void accept_new_clients()
 
 static void end_server()
 {
+    DBG_PRINTLN(LOG_ERROR, "end server");
     for (int i = 0; i < MAX_TCP_CLIENTS; i++)
     {
         cleanup_tcp_client(i);
@@ -328,6 +358,7 @@ void modbus_tcp_server(bool work)
     {
         if(server_started)
         {
+            DBG_PRINTLN(LOG_ERROR, "end server...");
             end_server();
             server_started = false;
         }
@@ -344,6 +375,15 @@ void modbus_tcp_server(bool work)
             cleanup_tcp_client(i);
             continue;
         }
+
+        /*
+        if (tcpClients[i])
+        {
+            DBG_PRINT(LOG_ERROR, F("in server, "));
+            DBG_PRINT(LOG_ERROR, i); DBG_PRINT(LOG_ERROR, F(" conn state: "));
+            DBG_PRINTLN(LOG_ERROR, tcpClients[i].connected());
+        }
+        */
 
         if (!ctx[i].busy && gwState == GW_IDLE)
         {
