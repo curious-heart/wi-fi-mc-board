@@ -12,7 +12,7 @@
 
 static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, NON_BLOCKING_MODE);
 //static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, BLOCKING_MODE);
-#define MAX_TCP_CLIENTS 2
+#define MAX_TCP_CLIENTS 1
 static WiFiClient tcpClients[MAX_TCP_CLIENTS];
 
 typedef struct

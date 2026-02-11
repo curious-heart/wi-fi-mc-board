@@ -13,7 +13,7 @@
 
 #include "modbus_ops.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00y";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00a";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
