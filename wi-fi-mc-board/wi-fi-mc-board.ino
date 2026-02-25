@@ -13,10 +13,11 @@
 
 #include "modbus_ops.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00a";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00s";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
+static const long gs_pdb_serial_ro_to_ms = 300; //this value should not exceeds RTU_TIMEOUT_MS(in logic).
 
 Stream& g_scrn_serial = Serial;
 Stream& g_pdb_serial = Serial1;
@@ -357,6 +358,11 @@ void setup(void) {
     delay(1);
   }
 
+  while (!Serial1) {
+    delay(1);
+  }
+  Serial1.setTimeout(gs_pdb_serial_ro_to_ms);
+
   g_dbg_serial.println(String("\n\nstart to run: ") + String(gs_wifi_mc_ver_str));
 
   String wifi_status_str = String("WiFi status:") + String(WiFi.status());
@@ -410,7 +416,7 @@ void loop(void) {
   {
     DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
     connect_wifi();
-    DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
+    DBG_PRINT(LOG_DEBUG, "Wi-Fi status :"); DBG_PRINTLN(LOG_DEBUG, curr_wifi_status());
   }
   ++maitain_nw_cnt;
 

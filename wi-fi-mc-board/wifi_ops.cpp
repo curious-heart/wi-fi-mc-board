@@ -105,21 +105,19 @@ const char* wifi_enc_2_str(uint8_t t)
     }
 }
 
-
 static void build_ap_list_json(String &json_msg_string)
 {
     wdt.RefreshWatchdog();
 
-    DBG_PRINTLN(LOG_INFO, "** Scan Networks **");
+    DBG_PRINTLN(LOG_DEBUG, F("** Scan Networks **"));
     int numSsid = WiFi.scanNetworks();
     if (numSsid < 0) {
-        DBG_PRINTLN(LOG_ERROR, "Couldn't get a wifi connection");
+        DBG_PRINTLN(LOG_ERROR, F("Couldn't get a wifi connection"));
         return;
     }
 
     // print the list of networks seen:
-    DBG_PRINT(LOG_INFO, "number of available networks:");
-    DBG_PRINTLN(LOG_INFO, numSsid);
+    DBG_PRINT(LOG_DEBUG, "number of available networks:"); DBG_PRINTLN(LOG_DEBUG, numSsid);
 
     JsonDocument doc;
     doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_AP_LIST;

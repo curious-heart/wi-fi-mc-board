@@ -176,8 +176,8 @@ void json_msg_handler_dispatcher(const char * msg)
         return;
     }
 
-    DBG_PRINTLN(LOG_INFO, F("a complete json msg:"));
-    DBG_PRINTLN(LOG_INFO, msg);
+    DBG_PRINTLN(LOG_DEBUG, F("a complete json msg:"));
+    DBG_PRINTLN(LOG_DEBUG, msg);
 
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, msg);
@@ -206,8 +206,8 @@ void json_msg_handler_dispatcher(const char * msg)
     }
     else
     {
-        DBG_PRINT(LOG_INFO, F("Msg handled: "));
-        DBG_PRINTLN(LOG_INFO, msg_type);
+        DBG_PRINT(LOG_DEBUG, F("Msg handled: "));
+        DBG_PRINTLN(LOG_DEBUG, msg_type);
     }
 }
 

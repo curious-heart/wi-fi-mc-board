@@ -19,7 +19,7 @@ typedef enum
     MB_GW_TGT_DEV_FAILED_TO_RESP = 0x0B,
 }mb_exception_code_e_t;
 
-#define RTU_TIMEOUT_MS 200
+#define RTU_TIMEOUT_MS 800
 #define MODBUS_RTU_SRV_ADDR 1
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr = MODBUS_RTU_SRV_ADDR);
 
@@ -28,6 +28,11 @@ bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr = MOD
  * pdu_len: OUT. holding pdu len.
  * */
 bool read_rtu_response(uint8_t ** rtu_pdu = nullptr, uint16_t *pdu_len = nullptr, uint32_t timeout_ms = RTU_TIMEOUT_MS);
+
+#define TCP_ADU_READ_TO_MS 300
+bool read_tcp_req_adu(int idx, uint32_t timeout_ms = TCP_ADU_READ_TO_MS);
+void send_tcp_exception(int idx, uint8_t fc, uint8_t code);
+void send_tcp_response(int idx, uint8_t * pdu_buf, uint16_t pdu_len);
 
 #define UINT16_HI_BYTE(d) ((uint8_t)((d) >> 8))
 #define UINT16_LO_BYTE(d) ((uint8_t)((d) & 0xFF))
