@@ -13,7 +13,7 @@
 
 #include "modbus_ops.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00s";
+constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00t";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
@@ -390,7 +390,8 @@ void setup(void) {
 long lastsend;
 
 static const uint32_t MAITAIN_NW_PERIOD = 5;
-void loop(void) {
+void loop(void)
+{
   static uint32_t maitain_nw_cnt = 0;
 
  /*
@@ -416,7 +417,7 @@ void loop(void) {
   {
     DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
     connect_wifi();
-    DBG_PRINT(LOG_DEBUG, "Wi-Fi status :"); DBG_PRINTLN(LOG_DEBUG, curr_wifi_status());
+    DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
   }
   ++maitain_nw_cnt;
 

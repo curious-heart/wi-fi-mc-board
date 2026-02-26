@@ -72,11 +72,10 @@ static GwState gwState = GW_IDLE;
 
 /*------------------------------*/
 static uint8_t gs_mb_rtu_adu_buf[gs_mb_max_rtu_adu_len];
-static unsigned long rtuSendTime = 0;
-static uint16_t rtuRxLen = 0;
+static unsigned long gs_rtu_send_time = 0;
+static uint16_t gs_rtu_rx_len = 0;
 static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = nullptr)
 {
-
     int incoming_byte_cnt = g_pdb_serial.available();
     if(incoming_byte_cnt <= 0) return false;
     DBG_PRINT(LOG_DEBUG, F("rtu available bytes ")); DBG_PRINTLN(LOG_DEBUG, incoming_byte_cnt);
@@ -87,17 +86,17 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
         return false;
     }
 
-    if(rtuRxLen + incoming_byte_cnt > gs_mb_max_rtu_adu_len)
+    if(gs_rtu_rx_len + incoming_byte_cnt > gs_mb_max_rtu_adu_len)
     {
-        rtuRxLen = 0;//buffer full. currently just discard received data. maybe do better in future.
+        gs_rtu_rx_len = 0;//buffer full. currently just discard received data. maybe do better in future.
 
     }
-    size_t read_byte_cnt = g_pdb_serial.readBytes(&gs_mb_rtu_adu_buf[rtuRxLen], incoming_byte_cnt);
+    size_t read_byte_cnt = g_pdb_serial.readBytes(&gs_mb_rtu_adu_buf[gs_rtu_rx_len], incoming_byte_cnt);
     DBG_PRINT(LOG_DEBUG, F("rtu read bytes ")); DBG_PRINTLN(LOG_DEBUG, read_byte_cnt);
-    rtuRxLen += read_byte_cnt;
+    gs_rtu_rx_len += read_byte_cnt;
 
     bool complete_resp = false, crc_ok = false;
-    if (rtuRxLen >= gs_mb_min_rtu_resp_adu_len)
+    if (gs_rtu_rx_len >= gs_mb_min_rtu_resp_adu_len)
     {
         uint16_t expect_len = 0;
         mb_func_code_e_t resp_func_code = (mb_func_code_e_t)gs_mb_rtu_adu_buf[1]; //the 1st byte is addr byte.
@@ -124,14 +123,14 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
                     expect_len = 1/*addr*/ + 1/*func code*/ + 2/*start reg addr*/ + 2/*reg count*/ + 2/*crc*/;
                     break;
             }
-            complete_resp = (rtuRxLen >= expect_len);
+            complete_resp = (gs_rtu_rx_len >= expect_len);
         }
 
         if(complete_resp)
         {
             DBG_PRINTLN(LOG_DEBUG, F("one complete rtu response"));
             {
-                for(int i = 0; i < rtuRxLen; ++i)
+                for(int i = 0; i < gs_rtu_rx_len; ++i)
                 {
                     DBG_PRINT(LOG_DEBUG, gs_mb_rtu_adu_buf[i], HEX);
                     DBG_PRINT(LOG_DEBUG, F(" "));
@@ -145,9 +144,9 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
                                (gs_mb_rtu_adu_buf[expect_len - 1] << 8);
 
             crc_ok = (crcCalc == crcRecv); 
-            rtuRxLen = 0;
+            gs_rtu_rx_len = 0;
 
-            if(pdu_len) *pdu_len = expect_len - 3; //omitint the 1st 1 addr byte and the last 2 crc bytes.
+            if(pdu_len) *pdu_len = expect_len - 3; //omit the 1st 1 addr byte and the last 2 crc bytes.
 
 
             DBG_PRINT(LOG_DEBUG, F("crc check: ")); DBG_PRINTLN(LOG_DEBUG, crc_ok);
@@ -176,7 +175,7 @@ bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 
     g_pdb_serial.write(gs_mb_rtu_adu_buf, len);
 
-    rtuSendTime = millis();
+    gs_rtu_send_time = millis();
     return true;
 }
 
@@ -187,12 +186,12 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
     while(!(complet_msg = poll_rtu_response(&crc_ok, &pdu_len)))
     {
         uint32_t curr = millis();
-        if(curr - rtuSendTime >= timeout_ms)
+        if(curr - gs_rtu_send_time >= timeout_ms)
         {
             timeout = true;
             DBG_PRINTLN(LOG_ERROR, F("read rtu response timeout!"));
 
-            rtuRxLen = 0;
+            gs_rtu_rx_len = 0;
             break;
         }
     }
@@ -239,7 +238,7 @@ void send_tcp_exception(int idx, uint8_t fc, uint8_t code)
     c.write(gs_mb_tcp_adu_buf, gs_mb_tcp_mbap_len + gs_mb_excption_resp_pdu_len);
 }
 
-static void handle_tcp_response()
+static void handle_tcp_response(int idx)
 {
     uint8_t * pdu_buf;
     uint16_t pdu_len;
@@ -247,14 +246,14 @@ static void handle_tcp_response()
 
     if(ret)
     {
-        send_tcp_response(activeClient, pdu_buf, pdu_len);
+        send_tcp_response(idx, pdu_buf, pdu_len);
     }
     else
     {
-        send_tcp_exception(activeClient, ctx[activeClient].pdu[0], MB_GW_TGT_DEV_FAILED_TO_RESP);
+        send_tcp_exception(idx, ctx[activeClient].pdu[0], MB_GW_TGT_DEV_FAILED_TO_RESP);
     }
 
-    ctx[activeClient].busy = false;
+    ctx[idx].busy = false;
     activeClient = -1;
     gwState = GW_IDLE;
 }
@@ -273,9 +272,9 @@ bool read_tcp_req_adu(int idx, uint32_t timeout_ms)
     unsigned long start_time = millis();
     while((incoming_bytes < expect_byte_cnt) && (millis() - start_time <= timeout_ms))
     {
-        int read_ret = c.read(gs_mb_tcp_adu_buf + incoming_bytes, gs_mb_max_tcp_adu_len - incoming_bytes);
+        int read_ret = c.read(&gs_mb_tcp_adu_buf[incoming_bytes], gs_mb_max_tcp_adu_len - incoming_bytes);
         DBG_PRINT(LOG_DEBUG, F("mb tcp read return: ")); DBG_PRINTLN(LOG_DEBUG, read_ret);
-        if(read_ret < 0) continue;
+        if(read_ret <= 0) continue;
 
         incoming_bytes += read_ret;
 
@@ -284,7 +283,6 @@ bool read_tcp_req_adu(int idx, uint32_t timeout_ms)
         if(!mbap_read)
         {
             MBAP * mbap_part = (MBAP*)gs_mb_tcp_adu_buf;
-            memcpy((uint8_t*)&x.mbap, gs_mb_tcp_adu_buf, gs_mb_tcp_mbap_len);
             x.mbap.transId = UINT16_NSTOH(mbap_part->transId);
             x.mbap.protoId = UINT16_NSTOH(mbap_part->protoId);
             x.mbap.length  = UINT16_NSTOH(mbap_part->length);
@@ -320,7 +318,7 @@ static void try_handle_tcp_request(int idx)
     ClientCtx&  x = ctx[idx];
 
     uint8_t fc = x.pdu[0];
-    DBG_PRINT(LOG_DEBUG, F("func code is: ")); DBG_PRINTLN(LOG_DEBUG, fc);
+    DBG_PRINT(LOG_DEBUG, F("mb tcp req func code is: ")); DBG_PRINTLN(LOG_DEBUG, fc);
     if(!IS_VALID_MB_FUNC_CODE(fc))
     {
         send_tcp_exception(idx, fc, MB_EXCP_ILLEGAL_FUNC);
@@ -380,7 +378,7 @@ static void accept_new_clients()
 
 static void end_server()
 {
-    DBG_PRINTLN(LOG_DEBUG, "end server");
+    DBG_PRINTLN(LOG_INFO, "end server...");
     for (int i = 0; i < MAX_TCP_CLIENTS; i++)
     {
         cleanup_tcp_client(i);
@@ -405,7 +403,6 @@ void modbus_tcp_server(bool work)
     {
         if(server_started)
         {
-            DBG_PRINTLN(LOG_DEBUG, "end server...");
             end_server();
             server_started = false;
         }
@@ -428,7 +425,7 @@ void modbus_tcp_server(bool work)
             try_handle_tcp_request(i);
             if (gwState == GW_WAIT_RTU)
             {
-                handle_tcp_response();
+                handle_tcp_response(i);
             }
         }
     }
