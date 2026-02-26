@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+#include <stdio.h>
+
 #include "common_defs.h"
 #include "json_keys.h"
 #include "wifi_ops.h"
@@ -204,3 +206,57 @@ void rpt_network_info_json()
     g_scrn_serial.print(msg_str);
 }
 
+bool parseIP(const char* str, IPAddress& out)
+{
+    int a, b, c, d;
+
+    int scan_ret = sscanf(str, "%d.%d.%d.%d", &a, &b, &c, &d);
+    if (scan_ret != 4) return false;
+
+    if (0>a || a>255 || 0>b || b>255 || 0>c || c>255 || 0>d || d>255)
+        return false;
+
+    out = IPAddress((uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)d);
+    return true;
+}
+
+void json_config_network(JsonDocument& doc)
+{
+    const char *ip_str = doc[JSON_KEY_IP_ADDR].as<const char*>(),
+               *gw_str = doc[JSON_KEY_GW].as<const char*>(),
+               *mask_str = doc[JSON_KEY_SUBNET_MASK].as<const char*>();
+
+    DBG_PRINTLN(LOG_DEBUG, F("ips in msg:"));
+    DBG_PRINT(LOG_DEBUG, F("local ip: "));    DBG_PRINTLN(LOG_DEBUG, ip_str);
+    DBG_PRINT(LOG_DEBUG, F("gw: "));          DBG_PRINTLN(LOG_DEBUG, gw_str);
+    DBG_PRINT(LOG_DEBUG, F("subnet mask: ")); DBG_PRINTLN(LOG_DEBUG, mask_str);
+
+    IPAddress local_ip, dns_server, gw_ip, subnet_mask;
+
+    if(!parseIP(ip_str, local_ip))
+    {
+        DBG_PRINT(LOG_ERROR, F("ip parse error: ")); DBG_PRINTLN(LOG_ERROR, ip_str);
+        return;
+    }
+
+    if(!parseIP(gw_str, gw_ip))
+    {
+        DBG_PRINT(LOG_ERROR, F("gw parse error: ")); DBG_PRINTLN(LOG_ERROR, gw_str);
+        return;
+    }
+
+    if(!parseIP(mask_str, subnet_mask))
+    {
+        DBG_PRINT(LOG_ERROR, F("subnet_mask parse error: ")); DBG_PRINTLN(LOG_ERROR, mask_str);
+        return;
+    }
+
+    DBG_PRINTLN(LOG_DEBUG, F("\n"));
+    DBG_PRINTLN(LOG_DEBUG, F("ips after convert:"));
+    DBG_PRINT(LOG_DEBUG, F("local ip: "));    DBG_PRINTLN(LOG_DEBUG, local_ip);
+    DBG_PRINT(LOG_DEBUG, F("dns server: "));  DBG_PRINTLN(LOG_DEBUG, dns_server);
+    DBG_PRINT(LOG_DEBUG, F("gw: "));          DBG_PRINTLN(LOG_DEBUG, gw_ip);
+    DBG_PRINT(LOG_DEBUG, F("subnet mask: ")); DBG_PRINTLN(LOG_DEBUG, subnet_mask);
+
+    WiFi.config(local_ip, dns_server, gw_ip, subnet_mask);
+}

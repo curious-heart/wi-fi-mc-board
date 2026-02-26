@@ -298,6 +298,7 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
 void scan_wifi_aps(JsonDocument& scan_json_doc);
 void connect_wifi(JsonDocument& ssid_key);
 void disconn_wifi(JsonDocument& msg);
+void json_config_network(JsonDocument& doc);
 static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
 {
     {JSON_VAL_TYPE_SCAN_WIFI, scan_wifi_aps},
@@ -305,6 +306,7 @@ static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
     {JSON_VAL_TYPE_DISCONN_AP, disconn_wifi},
     {JSON_VAL_TYPE_CMD, cmd_hdlr},
     {JSON_VAL_TYPE_REG, json_cmd_write_mb_reg},
+    {JSON_VAL_TYPE_NETWORK, json_config_network},
     {nullptr, nullptr},
 };
 
