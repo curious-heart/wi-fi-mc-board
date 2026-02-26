@@ -9,6 +9,7 @@
     JSON_KEY(JSON_VAL_TYPE_SCAN_WIFI, "scan_wifi") \
     JSON_KEY(JSON_VAL_TYPE_CONN_AP, "conn_wifi_ap") \
     JSON_KEY(JSON_VAL_TYPE_DISCONN_AP, "disconn_wifi") \
+    JSON_KEY(JSON_VAL_TYPE_NETWORK, "network") \
     JSON_KEY(JSON_VAL_TYPE_REG, "register") \
     JSON_KEY(JSON_VAL_TYPE_CMD, "cmd") \
     JSON_KEY(JSON_VAL_TYPE_DATA, "data") \
@@ -20,7 +21,11 @@
     JSON_KEY(JSON_KEY_DIST, "tof_distance") \
     JSON_KEY(JSON_KEY_COMMAND, "command") \
     JSON_KEY(JSON_VAL_COMMAND_READ_MB_REG, "read_mb_reg") \
-    JSON_KEY(JSON_VAL_COMMAND_INQUIRE_NETWORK, "inquire_network")
+    JSON_KEY(JSON_VAL_COMMAND_INQUIRE_NETWORK, "inquire_network") \
+    JSON_KEY(JSON_KEY_CONN_STATUS, "conn_status") \
+    JSON_KEY(JSON_KEY_IP_ADDR, "ip_addr") \
+    JSON_KEY(JSON_KEY_SUBNET_MASK, "subnet_mask") \
+    JSON_KEY(JSON_KEY_GW, "gw") \
 
 JSON_KEY_LIST;
 

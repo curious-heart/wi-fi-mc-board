@@ -24,4 +24,6 @@ wl_status_t connect_wifi();
 void disconn_wifi(JsonDocument& doc);
 wl_status_t disconn_wifi();
 
+void rpt_network_info_json();
+
 #endif

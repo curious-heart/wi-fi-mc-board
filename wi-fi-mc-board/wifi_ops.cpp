@@ -162,7 +162,8 @@ void scan_wifi_aps(JsonDocument& /*scan_json_doc*/)
     g_scrn_serial.print(scan_result);
 }
 
-void printMacAddress() {
+void printMacAddress()
+{
     // print your MAC address:
     uint8_t mac[6];
     static char mac_str[6*3] = {0};
@@ -185,3 +186,21 @@ void printMacAddress() {
     g_dbg_serial.print("MAC: ");
     g_dbg_serial.println(mac_str);
 }
+
+void rpt_network_info_json()
+{
+    JsonDocument doc;
+    doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_NETWORK;
+
+    doc[JSON_KEY_CONN_STATUS] = (WL_CONNECTED == curr_wifi_status()) ? 1 : 0;
+    doc[JSON_KEY_IP_ADDR] = WiFi.localIP().get_address();
+    doc[JSON_KEY_SUBNET_MASK] = WiFi.subnetMask().get_address();
+    doc[JSON_KEY_GW] = WiFi.gatewayIP().get_address();
+    doc[JSON_KEY_SSID] = WiFi.SSID();
+    doc[JSON_KEY_RSSI] = WiFi.RSSI();
+
+    String msg_str;
+    serializeJson(doc, msg_str);
+    g_scrn_serial.print(msg_str);
+}
+

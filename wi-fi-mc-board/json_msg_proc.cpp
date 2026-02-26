@@ -196,10 +196,16 @@ static void json_cmd_read_mb_reg(JsonDocument& /*doc*/)
     g_scrn_serial.print(mb_reg_val_json_doc_str);
 }
 
+static void json_cmd_inquire_network(JsonDocument& /*doc*/)
+{
+    void rpt_network_info_json();
+    rpt_network_info_json();
+}
+
 static json_msg_type_hdlr_map_t gs_cmd_handler_map[] =
 {
     {JSON_VAL_COMMAND_READ_MB_REG, json_cmd_read_mb_reg},
-    {JSON_VAL_COMMAND_INQUIRE_NETWORK, nullptr},
+    {JSON_VAL_COMMAND_INQUIRE_NETWORK, json_cmd_inquire_network},
     {nullptr, nullptr},
 };
 
