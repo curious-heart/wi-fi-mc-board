@@ -159,12 +159,54 @@ typedef struct
     json_doc_hdlr hdlr;
 }json_msg_type_hdlr_map_t;
 
+static json_msg_type_hdlr_map_t gs_cmd_handler_map[] =
+{
+    {JSON_VAL_COMMAND_READ_MB_REG, nullptr},
+    {JSON_VAL_COMMAND_INQUIRE_NETWORK, nullptr},
+    {nullptr, nullptr},
+};
+
+static void find_hdlr_and_exec(JsonDocument& doc, const char* key_str, json_msg_type_hdlr_map_t * hdlr_map)
+{
+    if(!key_str || !hdlr_map) return;
+
+    bool handled = false;
+    const char* msg_or_cmd_type = doc[key_str];
+
+    for(int idx = 0; hdlr_map[idx].msg_type && hdlr_map[idx].hdlr; ++idx)
+    {
+        if(!strcmp(msg_or_cmd_type, hdlr_map[idx].msg_type))
+        {
+            hdlr_map[idx].hdlr(doc);
+            handled = true;
+            break;
+        }
+    }
+
+    if(!handled)
+    {
+        DBG_PRINT(LOG_WARN, F("Unknown msg or cmd type:")); DBG_PRINTLN(LOG_WARN, msg_or_cmd_type);
+    }
+    else
+    {
+        DBG_PRINT(LOG_DEBUG, F("Msg handled: ")); DBG_PRINTLN(LOG_DEBUG, msg_or_cmd_type);
+    }
+}
+
+static void cmd_hdlr(JsonDocument& doc)
+{
+    find_hdlr_and_exec(doc, JSON_KEY_COMMAND, gs_cmd_handler_map);
+}
+
 void scan_wifi_aps(JsonDocument& scan_json_doc);
 void connect_wifi(JsonDocument& ssid_key);
+void disconn_wifi(JsonDocument& msg);
 static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
 {
     {JSON_VAL_TYPE_SCAN_WIFI, scan_wifi_aps},
     {JSON_VAL_TYPE_CONN_AP, connect_wifi},
+    {JSON_VAL_TYPE_DISCONN_AP, disconn_wifi},
+    {JSON_VAL_TYPE_CMD, cmd_hdlr},
     {nullptr, nullptr},
 };
 
@@ -187,27 +229,7 @@ void json_msg_handler_dispatcher(const char * msg)
         DBG_PRINTLN(LOG_ERROR, error.c_str());
         return;
     }
-    const char* msg_type = doc[JSON_KEY_JSON_TYPE];
-    bool handled = false;
-    for(int idx = 0; gs_json_msg_handler_map[idx].msg_type && gs_json_msg_handler_map[idx].hdlr; ++idx)
-    {
-        if(!strcmp(msg_type, gs_json_msg_handler_map[idx].msg_type))
-        {
-            gs_json_msg_handler_map[idx].hdlr(doc);
-            handled = true;
-            break;
-        }
-    }
 
-    if(!handled)
-    {
-        DBG_PRINT(LOG_WARN, F("Unknown msg type:"));
-        DBG_PRINTLN(LOG_WARN, msg_type);
-    }
-    else
-    {
-        DBG_PRINT(LOG_DEBUG, F("Msg handled: "));
-        DBG_PRINTLN(LOG_DEBUG, msg_type);
-    }
+    find_hdlr_and_exec(doc, JSON_KEY_JSON_TYPE, gs_json_msg_handler_map);
 }
 

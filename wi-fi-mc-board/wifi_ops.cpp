@@ -59,6 +59,11 @@ wl_status_t connect_wifi()
     return gs_wifi_status;
 }
 
+void disconn_wifi(JsonDocument& /*doc*/)
+{
+    disconn_wifi();
+}
+
 wl_status_t disconn_wifi()
 {
     gs_wifi_status = (wl_status_t)WiFi.disconnect();
@@ -129,7 +134,7 @@ static void build_ap_list_json(String &json_msg_string)
 
         ap_info_json[JSON_KEY_SSID]     = WiFi.SSID(thisNet);
 
-        uint8_t enc; uint32_t sec;
+        uint32_t sec;
         sec = WiFi.encryptionTypeEx(thisNet);
         ap_info_json[JSON_KEY_SEC] = wifi_security_2_str(sec);
 
@@ -142,7 +147,7 @@ static void build_ap_list_json(String &json_msg_string)
     wdt.RefreshWatchdog();
 }
 
-void scan_wifi_aps(JsonDocument& scan_json_doc)
+void scan_wifi_aps(JsonDocument& /*scan_json_doc*/)
 {
     String scan_result;
     build_ap_list_json(scan_result);
@@ -152,7 +157,7 @@ void scan_wifi_aps(JsonDocument& scan_json_doc)
 
 void printMacAddress() {
     // print your MAC address:
-    byte mac[6];
+    uint8_t mac[6];
     static char mac_str[6*3] = {0};
     static bool getted = false;
 

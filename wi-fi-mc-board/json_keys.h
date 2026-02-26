@@ -17,8 +17,10 @@
     JSON_KEY(JSON_KEY_SEC, "security") \
     JSON_KEY(JSON_KEY_RSSI, "rssi") \
     JSON_KEY(JSON_KEY_WIFI_PWD, "wifi_pwd") \
-    JSON_KEY(JSON_KEY_CMD, "command") \
-    JSON_KEY(JSON_KEY_DIST, "tof_distance")
+    JSON_KEY(JSON_KEY_DIST, "tof_distance") \
+    JSON_KEY(JSON_KEY_COMMAND, "command") \
+    JSON_KEY(JSON_VAL_COMMAND_READ_MB_REG, "read_mb_reg") \
+    JSON_KEY(JSON_VAL_COMMAND_INQUIRE_NETWORK, "inquire_network")
 
 JSON_KEY_LIST;
 
