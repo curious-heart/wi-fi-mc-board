@@ -14,4 +14,6 @@ extern WDT wdt;
 #define UINT16_HTONS(d) (uint16_t)((((uint16_t)(d)) << 8) | (((uint16_t)(d)) >> 8))
 #define UINT16_NSTOH(d) UINT16_HTONS(d)
 
+#define ARRAY_ITEM_CNT(arr) (sizeof(arr)/sizeof(arr[0]))
+
 #endif

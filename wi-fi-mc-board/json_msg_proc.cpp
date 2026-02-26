@@ -5,6 +5,8 @@
 #include "json_msg_proc.h"
 #include "json_keys.h"
 
+#include "modbus_ops.h"
+
 #define JSON_RX_BUF_SIZE 1024
 
 /*
@@ -159,9 +161,44 @@ typedef struct
     json_doc_hdlr hdlr;
 }json_msg_type_hdlr_map_t;
 
+static void json_cmd_read_mb_reg(JsonDocument& /*doc*/)
+{//4~12, 14, 15  
+#define ITEM_ELE(e) e
+#define ITEM_LIST \
+    {\
+        ITEM_ELE(State), ITEM_ELE(VoltSet), ITEM_ELE(FilamentSet), ITEM_ELE(ExposureTime), ITEM_ELE(Voltmeter),\
+        ITEM_ELE(Ammeter), ITEM_ELE(RangeIndicationStatus), ITEM_ELE(ExposureStatus), ITEM_ELE(RangeIndicationStart), \
+        ITEM_ELE(BatteryLevel), ITEM_ELE(BatteryVoltmeter), \
+    }
+    static hv_mb_reg_e_t reg_rpt_list[] = ITEM_LIST;
+#undef ITEM_ELE
+#define ITEM_ELE(e) String(e)
+    static String reg_rpt_str_list[] = ITEM_LIST;
+
+    uint16_t reg_val_buf[MAX_HV_NORMAL_MB_REG_NUM];
+
+    memset(reg_val_buf, 0, sizeof(reg_val_buf));
+
+    bool ret = hv_controller_read_regs((uint16_t)HSV, reg_val_buf, MAX_HV_NORMAL_MB_REG_NUM);
+
+    LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_ERROR;
+    DBG_PRINT(log_lvl, F("json_cmd_read_mb_reg read hv ret:")); DBG_PRINTLN(log_lvl, ret);
+
+    JsonDocument ret_doc;
+    ret_doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_REG;
+    for(int idx = 0; idx < ARRAY_ITEM_CNT(reg_rpt_list); ++idx)
+    {
+        ret_doc[reg_rpt_str_list[idx]] = String(reg_val_buf[reg_rpt_list[idx]]);
+    }
+    String mb_reg_val_json_doc_str;
+    serializeJson(ret_doc, mb_reg_val_json_doc_str);
+
+    g_scrn_serial.print(mb_reg_val_json_doc_str);
+}
+
 static json_msg_type_hdlr_map_t gs_cmd_handler_map[] =
 {
-    {JSON_VAL_COMMAND_READ_MB_REG, nullptr},
+    {JSON_VAL_COMMAND_READ_MB_REG, json_cmd_read_mb_reg},
     {JSON_VAL_COMMAND_INQUIRE_NETWORK, nullptr},
     {nullptr, nullptr},
 };
@@ -198,6 +235,60 @@ static void cmd_hdlr(JsonDocument& doc)
     find_hdlr_and_exec(doc, JSON_KEY_COMMAND, gs_cmd_handler_map);
 }
 
+static void json_cmd_write_mb_reg(JsonDocument& doc)
+{
+#define DBG_WRITE_LOG \
+    {\
+        String dbg_str = String("json_cmd_write_mb_reg write hv, reg from ") + String(reg_seg_1st) \
+                        + String(" to ") + String(reg_seg_last) + String(". ret: ") + String(ret); \
+        LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_ERROR; \
+        DBG_PRINTLN(log_lvl, dbg_str); \
+    }
+
+    bool new_reg_seg = true;
+    uint16_t reg_seg_1st = 0, reg_seg_last = 0;
+    uint16_t reg_val_buf[MAX_HV_NORMAL_MB_REG_NUM];
+    int idx = 0;
+
+    JsonObject obj = doc.as<JsonObject>();
+    for (JsonPair kv : obj)
+    {
+        const char* key = kv.key().c_str();
+        JsonVariant value = kv.value();
+        if(!strcmp(key, JSON_KEY_JSON_TYPE)) continue;
+
+        uint16_t reg_no = (uint16_t)(String(key).toInt());
+        if((!new_reg_seg && (reg_seg_last + 1 != reg_no)) || (idx >= MAX_HV_NORMAL_MB_REG_NUM))
+        {
+            bool ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+            new_reg_seg = true;
+
+            DBG_WRITE_LOG;
+        }
+
+        if(new_reg_seg)
+        {
+            idx = 0;
+            reg_seg_1st = reg_seg_last = reg_no;
+            reg_val_buf[idx++] = (uint16_t)(value.as<unsigned int>());
+            new_reg_seg = false;
+
+        }
+        else if(reg_seg_last + 1 == reg_no)
+        {
+            reg_seg_last = reg_no;
+            reg_val_buf[idx++] = (uint16_t)(value.as<unsigned int>());
+        }
+    }
+
+    if(idx > 0)
+    {
+        bool ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+        DBG_WRITE_LOG;
+    }
+#undef DBG_WRITE_LOG
+}
+
 void scan_wifi_aps(JsonDocument& scan_json_doc);
 void connect_wifi(JsonDocument& ssid_key);
 void disconn_wifi(JsonDocument& msg);
@@ -207,6 +298,7 @@ static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
     {JSON_VAL_TYPE_CONN_AP, connect_wifi},
     {JSON_VAL_TYPE_DISCONN_AP, disconn_wifi},
     {JSON_VAL_TYPE_CMD, cmd_hdlr},
+    {JSON_VAL_TYPE_REG, json_cmd_write_mb_reg},
     {nullptr, nullptr},
 };
 

@@ -1,8 +1,8 @@
 #include "debug_ctrl.h"
 
-enum LOG_LEVEL g_APP_LOG_LEVEL = LOG_ERROR;
+LOG_LEVEL g_APP_LOG_LEVEL = LOG_ERROR;
 
-void switch_dbg_print_lvl(enum LOG_LEVEL lvl)
+void switch_dbg_print_lvl(LOG_LEVEL lvl)
 {
     g_APP_LOG_LEVEL = lvl;
 }
