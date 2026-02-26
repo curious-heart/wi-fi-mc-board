@@ -376,7 +376,7 @@ static void accept_new_clients()
     newClient.stop();
 }
 
-static void end_server()
+void end_mb_tcp_server()
 {
     DBG_PRINTLN(LOG_INFO, "end server...");
     for (int i = 0; i < MAX_TCP_CLIENTS; i++)
@@ -403,7 +403,7 @@ void modbus_tcp_server(bool work)
     {
         if(server_started)
         {
-            end_server();
+            end_mb_tcp_server();
             server_started = false;
         }
         return;

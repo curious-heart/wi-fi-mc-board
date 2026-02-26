@@ -54,6 +54,7 @@ typedef enum
 }hv_mb_reg_e_t;
 
 void modbus_tcp_server(bool work = true);
+void end_mb_tcp_server();
 
 bool hv_controller_write_single_reg(uint16_t reg_addr, uint16_t value);
 bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int reg_cnt);

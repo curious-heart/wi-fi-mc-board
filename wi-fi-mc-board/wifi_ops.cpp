@@ -66,7 +66,14 @@ void disconn_wifi(JsonDocument& /*doc*/)
 
 wl_status_t disconn_wifi()
 {
+    void end_mb_tcp_server();
+
+    end_mb_tcp_server();
+
     gs_wifi_status = (wl_status_t)WiFi.disconnect();
+
+    memset(&gs_curr_wifi_ssid_pwd, 0, sizeof(gs_curr_wifi_ssid_pwd));
+
     return gs_wifi_status;
 }
 
