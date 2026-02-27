@@ -13,5 +13,7 @@ const char* json_msg_recv_proc(Stream &sport, json_str_msg_dispatcher_t dispatch
 typedef void (*json_doc_hdlr)(JsonDocument& doc);
 
 void rpt_dev_info_json();
+void rpt_tof_dis_json(uint16_t dis_mm);
+void rpt_mb_reg_json();
 
 #endif

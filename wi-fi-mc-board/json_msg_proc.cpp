@@ -162,13 +162,18 @@ typedef struct
 }json_msg_type_hdlr_map_t;
 
 static void json_cmd_read_mb_reg(JsonDocument& /*doc*/)
-{//4~12, 14, 15  
+{
+    rpt_mb_reg_json();
+}
+
+void rpt_mb_reg_json()
+{//4~12, 14, 15, 21  
 #define ITEM_ELE(e) e
 #define ITEM_LIST \
     {\
         ITEM_ELE(State), ITEM_ELE(VoltSet), ITEM_ELE(FilamentSet), ITEM_ELE(ExposureTime), ITEM_ELE(Voltmeter),\
         ITEM_ELE(Ammeter), ITEM_ELE(RangeIndicationStatus), ITEM_ELE(ExposureStatus), ITEM_ELE(RangeIndicationStart), \
-        ITEM_ELE(BatteryLevel), ITEM_ELE(BatteryVoltmeter), \
+        ITEM_ELE(BatteryLevel), ITEM_ELE(BatteryVoltmeter), ITEM_ELE(exposureCount)\
     }
     static hv_mb_reg_e_t reg_rpt_list[] = ITEM_LIST;
 #undef ITEM_ELE
@@ -356,3 +361,18 @@ void json_msg_handler_dispatcher(const char * msg)
     find_hdlr_and_exec(doc, JSON_KEY_JSON_TYPE, gs_json_msg_handler_map);
 }
 
+void rpt_tof_dis_json(uint16_t dis_mm)
+{
+#define MAX_DIS_MM_STR_LEN 5
+    static char ls_dis_mm_str[MAX_DIS_MM_STR_LEN + 1] = {};
+
+    snprintf(ls_dis_mm_str, sizeof(ls_dis_mm_str), "%d", dis_mm);
+
+    JsonDocument doc;
+    doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_DATA;
+    doc[JSON_KEY_DIST] = ls_dis_mm_str;
+
+    String info_str;
+    serializeJson(doc, info_str);
+    g_scrn_serial.print(info_str);
+}
