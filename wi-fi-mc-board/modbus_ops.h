@@ -53,6 +53,8 @@ typedef enum
     HV_MB_REG_END_FLAG, /*register end flag.*/
 }hv_mb_reg_e_t;
 
+#define EXPO_OP_START 2
+
 void modbus_tcp_server(bool work = true);
 void end_mb_tcp_server();
 
@@ -62,5 +64,8 @@ bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cn
 
 /*may return nullptr (when reading HSV reg fails.*/
 const char* get_pdb_ver_str();
+
+void start_expo();
+void switch_range_light(bool on);
 
 #endif

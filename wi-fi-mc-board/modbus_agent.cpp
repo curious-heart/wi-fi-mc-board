@@ -545,3 +545,13 @@ const char* get_pdb_ver_str()
 #undef BYTE_2_3DGIT_STR
 #undef MAX_PDB_VER_STR_LEN
 }
+
+void start_expo()
+{
+    hv_controller_write_single_reg(ExposureStart, EXPO_OP_START);
+}
+
+void switch_range_light(bool on)
+{
+    hv_controller_write_single_reg(RangeIndicationStart, (uint16_t)on);
+}

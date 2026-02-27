@@ -191,7 +191,7 @@ void rpt_mb_reg_json()
 
     JsonDocument ret_doc;
     ret_doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_REG;
-    for(int idx = 0; idx < ARRAY_ITEM_CNT(reg_rpt_list); ++idx)
+    for(size_t idx = 0; idx < ARRAY_ITEM_CNT(reg_rpt_list); ++idx)
     {
         ret_doc[reg_rpt_str_list[idx]] = String(reg_val_buf[reg_rpt_list[idx]]);
     }
