@@ -13,7 +13,8 @@
 
 #include "modbus_ops.h"
 
-constexpr const char gs_wifi_mc_ver_str[] = "wi-fi-mc-1.00l";
+constexpr const char g_dev_maj_ver[] = "v1";
+constexpr const char g_wifi_mc_ver_str[] = "d001";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
@@ -30,6 +31,28 @@ static constexpr uint32_t gs_wdt_dura_ms = 30000;
 WDT wdt;
 
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+
+const char* get_dev_ver_str()
+{
+#define MAX_DEV_STR_LEN 20
+    static char ls_ver_str[MAX_DEV_STR_LEN + 1] = {0};
+    static bool getted = false;
+
+    const char invalid_pdb_ver_str[] = "0";
+
+    if(!getted)
+    {
+        const char * pdb_ver = get_pdb_ver_str();
+        getted = (pdb_ver != nullptr);
+
+        if(!pdb_ver) pdb_ver = invalid_pdb_ver_str;
+        snprintf(ls_ver_str, sizeof(ls_ver_str), "%s %s.%s.%s",
+                                                 g_dev_maj_ver, g_dev_maj_ver, pdb_ver, g_wifi_mc_ver_str);
+
+    }
+
+    return ls_ver_str;
+}
 
 char macaddr[50];   //mac地址
 char version[50];   //版本号
@@ -363,11 +386,7 @@ void setup(void) {
   }
   Serial1.setTimeout(gs_pdb_serial_ro_to_ms);
 
-  g_dbg_serial.println(String("\n\nstart to run: ") + String(gs_wifi_mc_ver_str));
-
-  String wifi_status_str = String("WiFi status:") + String(WiFi.status());
-  g_dbg_serial.println(wifi_status_str);
-  printMacAddress();
+  g_dbg_serial.println(String("\n\nstart to run: ") + String(g_wifi_mc_ver_str));
 
   g_dbg_serial.println(F("init Adafruit VL53L0X......"));
   //if (!lox.begin(VL53L0X_I2C_ADDR, true, &Wire)) {

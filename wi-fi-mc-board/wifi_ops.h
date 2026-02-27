@@ -16,7 +16,7 @@ wl_status_t curr_wifi_status();
 void wifi_init();
 
 void scan_wifi_aps(JsonDocument& scan_json_doc);
-void printMacAddress();
+const char* get_mac_addr_str();
 
 wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy = true);
 void connect_wifi(JsonDocument& ssid_key);

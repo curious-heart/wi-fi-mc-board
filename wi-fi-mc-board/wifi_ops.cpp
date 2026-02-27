@@ -179,7 +179,7 @@ void scan_wifi_aps(JsonDocument& /*scan_json_doc*/)
     g_scrn_serial.print(scan_result);
 }
 
-void printMacAddress()
+const char* get_mac_addr_str()
 {
     // print your MAC address:
     uint8_t mac[6];
@@ -200,8 +200,7 @@ void printMacAddress()
         getted = true;
     }
 
-    g_dbg_serial.print("MAC: ");
-    g_dbg_serial.println(mac_str);
+    return mac_str;
 }
 
 void rpt_network_info_json()

@@ -60,4 +60,7 @@ bool hv_controller_write_single_reg(uint16_t reg_addr, uint16_t value);
 bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int reg_cnt);
 bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cnt);
 
+/*may return nullptr (when reading HSV reg fails.*/
+const char* get_pdb_ver_str();
+
 #endif

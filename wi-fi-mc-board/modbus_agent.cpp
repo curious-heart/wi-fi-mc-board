@@ -3,6 +3,7 @@
 
 #include "common_defs.h"
 #include "modbus_internal.h"
+#include "modbus_ops.h"
 
 #include "debug_ctrl.h"
 
@@ -506,4 +507,41 @@ bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cn
         }
     }
     return ret;
+}
+
+const char* get_pdb_ver_str()
+{
+#define MAX_PDB_VER_STR_LEN 6
+    static char ver_str[MAX_PDB_VER_STR_LEN + 1] = {0};
+    static bool getted = false;
+
+#define BYTE_2_3DGIT_STR \
+    {\
+        for(int j = 0; j < 3; ++j)\
+        {\
+            ver_str[idx--] = (pv % 10) + '0';\
+            pv = pv / 10;\
+        }\
+    }
+    if(!getted)
+    {
+        uint16_t ver = 0;
+        if(hv_controller_read_regs(HSV, &ver, 1))
+        {
+            int idx = MAX_PDB_VER_STR_LEN - 1;
+            uint8_t pv = ver & 0xFF;
+            BYTE_2_3DGIT_STR;
+
+            pv = ver >> 8;
+            BYTE_2_3DGIT_STR;
+ 
+            ver_str[MAX_PDB_VER_STR_LEN] = 0;
+            getted = true;
+        }
+    }
+
+    return getted ? ver_str : nullptr;
+
+#undef BYTE_2_3DGIT_STR
+#undef MAX_PDB_VER_STR_LEN
 }

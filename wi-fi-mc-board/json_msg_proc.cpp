@@ -202,10 +202,33 @@ static void json_cmd_inquire_network(JsonDocument& /*doc*/)
     rpt_network_info_json();
 }
 
+void rpt_dev_info_json()
+{
+    const char* get_dev_ver_str();
+    const char* get_mac_addr_str();
+
+    const char *mac_str = get_mac_addr_str(), *dev_ver_str = get_dev_ver_str();
+
+    JsonDocument doc;
+    doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_INFO;
+    doc[JSON_KEY_MAC_ADDR] = mac_str;
+    doc[JSON_KEY_VERSION] = dev_ver_str;
+
+    String info_str;
+    serializeJson(doc, info_str);
+    g_scrn_serial.print(info_str);
+}
+
+static void json_cmd_inquire_dev_info(JsonDocument& /*doc*/)
+{
+    rpt_dev_info_json();
+}
+
 static json_msg_type_hdlr_map_t gs_cmd_handler_map[] =
 {
     {JSON_VAL_COMMAND_READ_MB_REG, json_cmd_read_mb_reg},
     {JSON_VAL_COMMAND_INQUIRE_NETWORK, json_cmd_inquire_network},
+    {JSON_VAL_COMMAND_INQUIRE_DEV_INFO, json_cmd_inquire_dev_info},
     {nullptr, nullptr},
 };
 

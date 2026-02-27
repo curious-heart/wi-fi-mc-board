@@ -5,6 +5,9 @@
 
 #define JSON_KEY_LIST \
     JSON_KEY(JSON_KEY_JSON_TYPE, "json_type") \
+    JSON_KEY(JSON_VAL_TYPE_INFO, "info") \
+    JSON_KEY(JSON_KEY_MAC_ADDR, "mac_address") \
+    JSON_KEY(JSON_KEY_VERSION, "version") \
     JSON_KEY(JSON_VAL_TYPE_AP_LIST, "wifi_ap_list") \
     JSON_KEY(JSON_VAL_TYPE_SCAN_WIFI, "scan_wifi") \
     JSON_KEY(JSON_VAL_TYPE_CONN_AP, "conn_wifi_ap") \
@@ -22,6 +25,7 @@
     JSON_KEY(JSON_KEY_COMMAND, "command") \
     JSON_KEY(JSON_VAL_COMMAND_READ_MB_REG, "read_mb_reg") \
     JSON_KEY(JSON_VAL_COMMAND_INQUIRE_NETWORK, "inquire_network") \
+    JSON_KEY(JSON_VAL_COMMAND_INQUIRE_DEV_INFO, "inquire_dev_info") \
     JSON_KEY(JSON_KEY_CONN_STATUS, "conn_status") \
     JSON_KEY(JSON_KEY_IP_ADDR, "ip_addr") \
     JSON_KEY(JSON_KEY_SUBNET_MASK, "subnet_mask") \
