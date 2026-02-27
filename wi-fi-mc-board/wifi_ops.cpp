@@ -8,6 +8,9 @@
 #include "wifi_ops.h"
 #include "debug_ctrl.h"
 
+static const char* gs_def_local_ip = "192.168.0.167";
+static const char* gs_def_gw = "192.168.0.1";
+static const char* gs_def_subnet_mask = "255.255.255.0";
 
 static wl_status_t gs_wifi_status = WL_IDLE_STATUS;
 static wifi_ssid_pwd_s_t gs_curr_wifi_ssid_pwd;
@@ -16,6 +19,8 @@ void wifi_init()
 {
     gs_curr_wifi_ssid_pwd.ssid[g_max_ssid_len] = 0;
     gs_curr_wifi_ssid_pwd.pwd[g_max_wifi_charpwd_len] = 0;
+
+    //wifi_config(gs_def_local_ip, gs_def_gw, gs_def_subnet_mask);
 
     gs_wifi_status = (wl_status_t)WiFi.status();
 }
@@ -28,7 +33,17 @@ wl_status_t curr_wifi_status()
 wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy)
 {
     gs_wifi_status = (wl_status_t)WiFi.status();
-    if(WL_CONNECTED == gs_wifi_status) disconn_wifi();
+    if(WL_CONNECTED == gs_wifi_status 
+            && !strcmp(ssid, gs_curr_wifi_ssid_pwd.ssid) 
+            && !strcmp(pwd, gs_curr_wifi_ssid_pwd.pwd))
+    {
+        DBG_PRINTLN(LOG_DEBUG, F("already connected to this ap."));
+        return gs_wifi_status;
+    }
+    else
+    {
+        disconn_wifi();
+    }
 
     if(cpy)
     {
@@ -63,10 +78,10 @@ wl_status_t connect_wifi()
 
 void disconn_wifi(JsonDocument& /*doc*/)
 {
-    disconn_wifi();
+    disconn_wifi(true);
 }
 
-wl_status_t disconn_wifi()
+wl_status_t disconn_wifi(bool clear_ap)
 {
     void end_mb_tcp_server();
 
@@ -74,7 +89,7 @@ wl_status_t disconn_wifi()
 
     gs_wifi_status = (wl_status_t)WiFi.disconnect();
 
-    memset(&gs_curr_wifi_ssid_pwd, 0, sizeof(gs_curr_wifi_ssid_pwd));
+    if(clear_ap) memset(&gs_curr_wifi_ssid_pwd, 0, sizeof(gs_curr_wifi_ssid_pwd));
 
     return gs_wifi_status;
 }
@@ -220,17 +235,8 @@ bool parseIP(const char* str, IPAddress& out)
     return true;
 }
 
-void json_config_network(JsonDocument& doc)
+void wifi_config(const char* ip_str, const char* gw_str, const char* mask_str)
 {
-    const char *ip_str = doc[JSON_KEY_IP_ADDR].as<const char*>(),
-               *gw_str = doc[JSON_KEY_GW].as<const char*>(),
-               *mask_str = doc[JSON_KEY_SUBNET_MASK].as<const char*>();
-
-    DBG_PRINTLN(LOG_DEBUG, F("ips in msg:"));
-    DBG_PRINT(LOG_DEBUG, F("local ip: "));    DBG_PRINTLN(LOG_DEBUG, ip_str);
-    DBG_PRINT(LOG_DEBUG, F("gw: "));          DBG_PRINTLN(LOG_DEBUG, gw_str);
-    DBG_PRINT(LOG_DEBUG, F("subnet mask: ")); DBG_PRINTLN(LOG_DEBUG, mask_str);
-
     IPAddress local_ip, dns_server, gw_ip, subnet_mask;
 
     if(!parseIP(ip_str, local_ip))
@@ -259,4 +265,32 @@ void json_config_network(JsonDocument& doc)
     DBG_PRINT(LOG_DEBUG, F("subnet mask: ")); DBG_PRINTLN(LOG_DEBUG, subnet_mask);
 
     WiFi.config(local_ip, dns_server, gw_ip, subnet_mask);
+}
+
+void json_config_network(JsonDocument& doc)
+{
+    const char *ip_str = doc[JSON_KEY_IP_ADDR].as<const char*>(),
+               *gw_str = doc[JSON_KEY_GW].as<const char*>(),
+               *mask_str = doc[JSON_KEY_SUBNET_MASK].as<const char*>();
+
+    DBG_PRINTLN(LOG_DEBUG, F("ips in msg:"));
+    DBG_PRINT(LOG_DEBUG, F("local ip: "));    DBG_PRINTLN(LOG_DEBUG, ip_str);
+    DBG_PRINT(LOG_DEBUG, F("gw: "));          DBG_PRINTLN(LOG_DEBUG, gw_str);
+    DBG_PRINT(LOG_DEBUG, F("subnet mask: ")); DBG_PRINTLN(LOG_DEBUG, mask_str);
+
+    const char *current_ip_str = WiFi.localIP().get_address(),
+               *current_gw_str = WiFi.gatewayIP().get_address(),
+               *current_mask_str = WiFi.subnetMask().get_address();
+
+    if((WL_CONNECTED == gs_wifi_status) 
+            && !strcmp(ip_str, current_ip_str)
+            && !strcmp(gw_str, current_gw_str)
+            && !strcmp(mask_str, current_mask_str))
+    {
+        DBG_PRINTLN(LOG_DEBUG, F("wifi connected, and current ip is the same as that to be configured."));
+        return;
+    }
+    disconn_wifi();
+    wifi_config(ip_str, gw_str, mask_str);
+    connect_wifi();
 }

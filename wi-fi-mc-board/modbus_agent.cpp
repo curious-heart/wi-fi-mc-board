@@ -376,6 +376,7 @@ static void accept_new_clients()
     newClient.stop();
 }
 
+static bool gs_mb_server_started = false;
 void end_mb_tcp_server()
 {
     DBG_PRINTLN(LOG_INFO, "end server...");
@@ -388,23 +389,21 @@ void end_mb_tcp_server()
     gwState = GW_IDLE;
 
     mbServer.end();
+    gs_mb_server_started = false;
 }
 
 void modbus_tcp_server(bool work)
 {
-    static bool server_started = false;
-
-    if(!server_started && work)
+    if(!gs_mb_server_started && work)
     {
         mbServer.begin();
-        server_started = true;
+        gs_mb_server_started = true;
     }
     else if(!work)
     {
-        if(server_started)
+        if(gs_mb_server_started)
         {
             end_mb_tcp_server();
-            server_started = false;
         }
         return;
     }

@@ -22,8 +22,10 @@ wl_status_t connect_wifi(const char* ssid, const char* pwd, bool cpy = true);
 void connect_wifi(JsonDocument& ssid_key);
 wl_status_t connect_wifi();
 void disconn_wifi(JsonDocument& doc);
-wl_status_t disconn_wifi();
+wl_status_t disconn_wifi(bool clear_ap = false);
 
 void rpt_network_info_json();
+
+void wifi_config(const char* ip_str, const char* gw_str, const char* mask_str);
 
 #endif
