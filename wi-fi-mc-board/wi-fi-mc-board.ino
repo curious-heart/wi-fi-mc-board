@@ -11,7 +11,7 @@
 #include "modbus_ops.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d003";
+constexpr const char g_wifi_mc_ver_str[] = "d005";
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
@@ -25,9 +25,11 @@ static constexpr uint32_t gs_wdt_dura_ms = 30000;
 static constexpr uint32_t gs_wdt_reset_wait_ms = 10000;
 
 static const unsigned long gs_tof_pwr_on_off_gap_ms = 3000;
+
+static const unsigned long gs_maitain_nw_period_ms = 3000;
 static const unsigned long gs_tof_report_period_ms = 2000;
-static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 static const unsigned long gs_mb_reg_rpt_period_ms = 4000;
+static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 
 WDT wdt;
 
@@ -221,11 +223,12 @@ void setup(void)
     wifi_init();
 }
 
-static const uint32_t MAITAIN_NW_PERIOD = 5;
 void loop(void)
 {
-    static uint32_t maitain_nw_cnt = 0;
-    static unsigned long ls_last_tof_rpt_time, ls_last_dev_inf_rpt_time, ls_last_reg_rpt_time;
+    static bool start_up = true;
+    static unsigned long ls_last_tof_rpt_time, ls_last_dev_inf_rpt_time, ls_last_reg_rpt_time,
+                         ls_maitain_nw_rpt_time;
+    static wl_status_t ls_last_rec_wifi_staus = WL_DISCONNECTED;
  
    /*
     //急停状态，只显示急停  别的不显示
@@ -234,18 +237,28 @@ void loop(void)
     }
   */
  
-    /*
-    process hard-key
-    */
+    /* process hard-key */
  
     /* maitain network */
-    if(((maitain_nw_cnt % MAITAIN_NW_PERIOD) == 0) && (WL_CONNECTED != curr_wifi_status()))
+    if(start_up || ((millis() - ls_maitain_nw_rpt_time) >= gs_maitain_nw_period_ms))
     {
-        DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
-        connect_wifi();
-        DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
+        if(WL_CONNECTED != curr_wifi_status())
+        {
+            DBG_PRINTLN(LOG_WARN, "Wi-Fi is disconnected. Now try connecting...");
+            connect_wifi();
+            DBG_PRINT(LOG_INFO, "Wi-Fi status :"); DBG_PRINTLN(LOG_INFO, curr_wifi_status());
+        }
+
+        wl_status_t curr_status = curr_wifi_status();
+        if(start_up || (curr_status != ls_last_rec_wifi_staus))
+        {
+            rpt_network_info_json();
+            ls_last_rec_wifi_staus = curr_status;
+        }
+
+        start_up = false;
+        ls_maitain_nw_rpt_time = millis();
     }
-    ++maitain_nw_cnt;
  
     /* process (json) msg from screen */
     json_msg_recv_proc(g_scrn_serial);
@@ -255,19 +268,19 @@ void loop(void)
 
     /* report tof distance */
     uint16_t average = calc_dis();
-    if ((millis() - ls_last_tof_rpt_time) >= gs_tof_report_period_ms)
+    if((millis() - ls_last_tof_rpt_time) >= gs_tof_report_period_ms)
     {
         rpt_tof_dis_json(average);
         ls_last_tof_rpt_time = millis();
     }
 
     /* other periodically ops*/
-    if ((millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
+    if((millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
     {
         rpt_dev_info_json();
         ls_last_dev_inf_rpt_time = millis();
     }
-    if ((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
+    if((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
     {
         rpt_mb_reg_json();
         ls_last_reg_rpt_time = millis();
