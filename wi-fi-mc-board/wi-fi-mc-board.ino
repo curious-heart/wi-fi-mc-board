@@ -11,7 +11,11 @@
 #include "modbus_ops.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d006";
+constexpr const char g_wifi_mc_ver_str[] = "d014";
+
+bool g_tof_chip_working = false;
+bool g_allow_force_exposure_ignoring_dist = false;
+uint16_t g_min_dist_for_expo_mm = 200;
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
@@ -69,16 +73,21 @@ uint32_t total;
 
 "key_val":"press"或"release"
 */
-#define EXPO_KEY   PA12
-#define RANGE_LIGH_KEY PA27
+#define EXPO_KEY   PA27// PA12
+#define RANGE_LIGH_KEY PA30 //PA27
 #define XSHUTDOWN PA14
 #define BLC       PB3
 
-uint16_t calc_dis(void)
+#define CHARGER_ST   PA12
+#define CHARG_SC_PG   PA15
+
+uint16_t calc_dis(bool req_ava = true)
 {
     static unsigned long ls_tof_pwr_off_time_ms; //when tof is power off
     static bool ls_tof_resetting = false;
     static const uint16_t ls_invalid_dis = (uint16_t)-1;
+
+    uint16_t single_val;
 
     //tof is powered off. wait some time.
     if(ls_tof_resetting && (millis() - ls_tof_pwr_off_time_ms < gs_tof_pwr_on_off_gap_ms))
@@ -91,6 +100,8 @@ uint16_t calc_dis(void)
     {
         digitalWrite(XSHUTDOWN, HIGH);
         ls_tof_resetting = false;
+
+        g_tof_chip_working = true;
     }
 
     lox.rangingTest(&measure, false);  // pass in 'true' to get debug data printout!
@@ -103,7 +114,8 @@ uint16_t calc_dis(void)
     total = total - readings[readIndex];
     // 读入当前旋转电位计的数值，
     // 并将其存储到数组的最后一位。
-    readings[readIndex] = measure.RangeMilliMeter;
+    single_val = measure.RangeMilliMeter;
+    readings[readIndex] = single_val;
     // 将最新读入的数值加入到总值中
     total = total + readings[readIndex++];
     // 将数组指示索引值加1
@@ -112,59 +124,79 @@ uint16_t calc_dis(void)
     if (readIndex >= numReadings) {
       readIndex = 0;
     }
-    //调试
-    uint16_t reg0 = readings[0];
-    if((reg0==8191)||(reg0==0))
-      return total / numReadings;;
-    int loop=0;
-    for(; loop< numReadings; loop++)
-    {
-      if(readings[loop] != reg0)
-        break;
-    }
 
-    if(loop==numReadings)
+    uint16_t reg0 = readings[0];
+    if((reg0 != 8191)&& (reg0 != 0))
     {
-        DBG_PRINT(LOG_WARN, F("reset tof because it the data is frozen at ")); DBG_PRINTLN(LOG_WARN, reg0);
-        digitalWrite(XSHUTDOWN, LOW);
-        ls_tof_resetting = true;  ls_tof_pwr_off_time_ms = millis();
-        return reg0;
+        int loop=0;
+        for(; loop< numReadings; loop++)
+        {
+          if(readings[loop] != reg0)
+            break;
+        }
+
+        if(loop==numReadings)
+        {
+            DBG_PRINT(LOG_WARN, F("reset tof because it the data is frozen at ")); DBG_PRINTLN(LOG_WARN, reg0);
+            digitalWrite(XSHUTDOWN, LOW);
+            ls_tof_resetting = true;  ls_tof_pwr_off_time_ms = millis();
+
+            g_tof_chip_working = false;
+            return reg0;
+        }
     }
     // 计算平均值
-    return total / numReadings;
+    return req_ava ? (total / numReadings) : single_val ;
 }
 
-static bool gs_expo_key_pressed = false;
-static unsigned long gs_expo_key_pressed_time;
-static bool gs_expo_key_held_handled = true;
+bool expo_is_allowed()
+{
+    if(g_allow_force_exposure_ignoring_dist) return true;
+
+    uint16_t curr_dist = calc_dis(false);
+    DBG_PRINTLN(LOG_DEBUG, F("dist in expo_is_allowed: ")); DBG_PRINTLN(LOG_DEBUG, curr_dist);
+    return (curr_dist >= g_min_dist_for_expo_mm);
+}
+
+volatile static uint32_t gs_key_press_dbg_cnt = 0, gs_key_release_dbg_cnt = 0;
+
+volatile static bool gs_expo_key_pressed = false;
+volatile static unsigned long gs_expo_key_pressed_time;
+volatile static bool gs_expo_key_held_handled = true;
 static void expo_key_switched(uint32_t /*id*/, uint32_t /*event*/)
 {
-    if(digitalRead(EXPO_KEY))
+    if(HIGH == digitalRead(EXPO_KEY))
     {//released
         gs_expo_key_pressed = false;
         gs_expo_key_held_handled = true;
+
+        gs_key_release_dbg_cnt++;
     }
     else
     {
         gs_expo_key_pressed = true;
         gs_expo_key_pressed_time = millis();
         gs_expo_key_held_handled = false;
+
+        gs_key_press_dbg_cnt++;
     }
 }
 
-static bool gs_range_light_key_pressed = false;
-static bool gs_range_light_key_handled = true;
+volatile static bool gs_range_light_key_pressed = false;
+volatile static bool gs_range_light_key_handled = true;
 static void range_light_key_switched(uint32_t /*id*/, uint32_t /*event*/)
 {
-    if(digitalRead(RANGE_LIGH_KEY))
+    if(HIGH == digitalRead(RANGE_LIGH_KEY))
     {//released
         gs_range_light_key_pressed = false;
         gs_range_light_key_handled = true;
+
     }
     else
     {
         gs_range_light_key_pressed = true;
         gs_range_light_key_handled = false;
+
     }
 }
 
@@ -172,6 +204,11 @@ static void process_hardware_key()
 {
     if(gs_expo_key_pressed)
     {
+        /*
+        DBG_PRINT(LOG_ERROR, F("press and release cnt: ")); DBG_PRINT(LOG_ERROR, gs_key_press_dbg_cnt);
+        DBG_PRINT(LOG_ERROR, F(", ")); DBG_PRINTLN(LOG_ERROR, gs_key_release_dbg_cnt);
+        */
+
         if(!gs_expo_key_held_handled && (millis() - gs_expo_key_pressed_time >= gs_expo_key_held_to_ms))
         {
             start_expo();
@@ -220,14 +257,21 @@ void setup(void)
     g_dbg_serial.println(F("init Adafruit VL53L0X......"));
     if (!lox.begin())
     {
-        g_dbg_serial.println(F("Failed to boot VL53L0X, reset device in several secondes..."));
+        g_tof_chip_working = false;
+        g_dbg_serial.println(F("Failed to boot VL53L0X, expo is disabled."));
+        /*
         wdt.StopWatchdog();
         wdt.InitWatchdog(gs_wdt_reset_wait_ms);
         while(1);
+        */
     }
-    wdt.RefreshWatchdog();
+    else
+    {
+        g_tof_chip_working = true;
+        g_dbg_serial.println(F("VL53L0X started\n"));
+    }
 
-    g_dbg_serial.println(F("VL53L0X started\n"));
+    wdt.RefreshWatchdog();
 
     pinMode(BLC, OUTPUT);
     digitalWrite(BLC, LOW);

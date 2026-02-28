@@ -11,6 +11,8 @@
 
 #define RTU_BAUDRATE   9600
 
+bool expo_is_allowed();
+
 static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, NON_BLOCKING_MODE);
 #define MAX_TCP_CLIENTS 2
 static WiFiClient tcpClients[MAX_TCP_CLIENTS];
@@ -309,6 +311,47 @@ bool read_tcp_req_adu(int idx, uint32_t timeout_ms)
     return ret;
 }
 
+/* return true means the write op could go on; return false means should not write.*/
+static bool filter_write_reg_value(uint8_t * rtu_pdu, uint16_t pdu_len)
+{
+    bool ret = true;
+
+    if(!rtu_pdu) return false;
+
+    uint8_t fc = rtu_pdu[0];
+    uint16_t reg_no, reg_val;
+    if(MB_FUNC_CODE_WRITE_SINGLE_REG == fc)
+    {
+        reg_no = GET_V_FROM_PDU(rtu_pdu, 1);
+        reg_val = GET_V_FROM_PDU(rtu_pdu, 3);
+        if(IS_MB_EXPOSING_REQ(reg_no, reg_val) && !expo_is_allowed())
+        {
+            ret = false;
+            DBG_PRINTLN(LOG_WARN, F("write single expo-ret rejected due to expo-not-allowed."));
+        }
+    }
+    else if(MB_FUNC_CODE_WRITE_MULI_REGS == fc)
+    {
+        reg_no = GET_V_FROM_PDU(rtu_pdu, 1);
+        //the reg val start from the 6th byte in pdu
+        for(int v_idx = 6; v_idx < pdu_len; v_idx += 2, ++reg_no)
+        {
+            reg_val = GET_V_FROM_PDU(rtu_pdu, v_idx);
+            if(IS_MB_EXPOSING_REQ(reg_no, reg_val))
+            {
+                if(!expo_is_allowed())
+                {
+                    DBG_PRINTLN(LOG_WARN, F("expo reg val is set to NULL before written due to expo-not-allowed."));
+                    rtu_pdu[v_idx] = rtu_pdu[v_idx + 1] = EXPO_OP_NULL;
+                }
+                break;
+            }
+        }
+    }
+
+    return ret;
+}
+
 static void try_handle_tcp_request(int idx)
 {
     if(!read_tcp_req_adu(idx))
@@ -320,7 +363,7 @@ static void try_handle_tcp_request(int idx)
 
     uint8_t fc = x.pdu[0];
     DBG_PRINT(LOG_DEBUG, F("mb tcp req func code is: ")); DBG_PRINTLN(LOG_DEBUG, fc);
-    if(!IS_VALID_MB_FUNC_CODE(fc))
+    if(!IS_VALID_MB_FUNC_CODE(fc) || !filter_write_reg_value(x.pdu, x.pduLen))
     {
         send_tcp_exception(idx, fc, MB_EXCP_ILLEGAL_FUNC);
         return;
@@ -548,7 +591,15 @@ const char* get_pdb_ver_str()
 
 void start_expo()
 {
-    hv_controller_write_single_reg(ExposureStart, EXPO_OP_START);
+    bool expo_is_allowed();
+    if(expo_is_allowed())
+    {
+        hv_controller_write_single_reg(ExposureStart, EXPO_OP_START);
+    }
+    else
+    {
+        DBG_PRINTLN(LOG_WARN, F("expo is not allowed."));
+    }
 }
 
 void switch_range_light(bool on)

@@ -269,6 +269,7 @@ static void cmd_hdlr(JsonDocument& doc)
     find_hdlr_and_exec(doc, JSON_KEY_COMMAND, gs_cmd_handler_map);
 }
 
+bool expo_is_allowed();
 static void json_cmd_write_mb_reg(JsonDocument& doc)
 {
 #define DBG_WRITE_LOG \
@@ -292,6 +293,13 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
         if(!strcmp(key, JSON_KEY_JSON_TYPE)) continue;
 
         uint16_t reg_no = (uint16_t)(String(key).toInt());
+        uint16_t value_u16 = (uint16_t)(value.as<unsigned int>());
+        if(IS_MB_EXPOSING_REQ(reg_no, value_u16) && !expo_is_allowed())
+        {
+            DBG_PRINTLN(LOG_WARN, F("ignore expo reg write in json msg due to dist is too small."));
+            continue;
+        }
+
         if((!new_reg_seg && (reg_seg_last + 1 != reg_no)) || (idx >= MAX_HV_NORMAL_MB_REG_NUM))
         {
             bool ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
@@ -304,14 +312,14 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
         {
             idx = 0;
             reg_seg_1st = reg_seg_last = reg_no;
-            reg_val_buf[idx++] = (uint16_t)(value.as<unsigned int>());
+            reg_val_buf[idx++] = value_u16;
             new_reg_seg = false;
 
         }
         else if(reg_seg_last + 1 == reg_no)
         {
             reg_seg_last = reg_no;
-            reg_val_buf[idx++] = (uint16_t)(value.as<unsigned int>());
+            reg_val_buf[idx++] = value_u16;
         }
     }
 

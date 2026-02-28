@@ -37,4 +37,6 @@ void send_tcp_response(int idx, uint8_t * pdu_buf, uint16_t pdu_len);
 #define UINT16_HI_BYTE(d) ((uint8_t)((d) >> 8))
 #define UINT16_LO_BYTE(d) ((uint8_t)((d) & 0xFF))
 
+#define GET_V_FROM_PDU(pdu, low_idx) (uint16_t)((((uint16_t)(pdu)[(low_idx)]) << 8) | (pdu)[(low_idx) + 1])
+
 #endif

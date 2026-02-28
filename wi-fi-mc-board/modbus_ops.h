@@ -53,7 +53,9 @@ typedef enum
     HV_MB_REG_END_FLAG, /*register end flag.*/
 }hv_mb_reg_e_t;
 
+#define EXPO_OP_NULL 0
 #define EXPO_OP_START 2
+#define IS_MB_EXPOSING_REQ(reg_no, val) ((ExposureStart == (reg_no)) && (EXPO_OP_START == (val)))
 
 void modbus_tcp_server(bool work = true);
 void end_mb_tcp_server();
