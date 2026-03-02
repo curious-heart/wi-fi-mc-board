@@ -16,6 +16,7 @@
     JSON_KEY(JSON_VAL_TYPE_REG, "register") \
     JSON_KEY(JSON_VAL_TYPE_CMD, "cmd") \
     JSON_KEY(JSON_VAL_TYPE_DATA, "data") \
+    JSON_KEY(JSON_VAL_TYPE_ENG_AND_DBG, "eng_and_dbg") \
     JSON_KEY(JSON_KEY_AP_LIST, "ap_list") \
     JSON_KEY(JSON_KEY_SSID, "ssid") \
     JSON_KEY(JSON_KEY_SEC, "security") \
@@ -30,6 +31,8 @@
     JSON_KEY(JSON_KEY_IP_ADDR, "ip_addr") \
     JSON_KEY(JSON_KEY_SUBNET_MASK, "subnet_mask") \
     JSON_KEY(JSON_KEY_GW, "gw") \
+    JSON_KEY(JSON_KEY_ALLOW_FORCE_EXPO_IG_DIST, "allow_force_expo_ig_dist") \
+    JSON_KEY(JSON_KEY_DBG_LVL, "dbg_lvl")
 
 JSON_KEY_LIST;
 

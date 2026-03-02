@@ -12,10 +12,10 @@
 #include "gpio_pin_process.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-f";
+constexpr const char g_wifi_mc_ver_str[] = "d015-h";
 
 bool g_tof_chip_working = false;
-bool g_allow_force_exposure_ignoring_dist = false;
+bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
 
 static constexpr long gs_scrn_serial_baud = 115200;
@@ -136,9 +136,14 @@ uint16_t calc_dis(bool req_ava = true)
     return req_ava ? (total / numReadings) : single_val ;
 }
 
+void allow_force_expo_ig_dist(bool flag)
+{
+    gs_allow_force_exposure_ignoring_dist = flag;
+}
+ 
 bool expo_is_allowed()
 {
-    if(g_allow_force_exposure_ignoring_dist) return true;
+    if(gs_allow_force_exposure_ignoring_dist) return true;
 
     uint16_t curr_dist = calc_dis(false);
     DBG_PRINTLN(LOG_DEBUG, F("dist in expo_is_allowed: ")); DBG_PRINTLN(LOG_DEBUG, curr_dist);

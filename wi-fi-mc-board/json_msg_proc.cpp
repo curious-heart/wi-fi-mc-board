@@ -245,6 +245,52 @@ static void json_cmd_inquire_dev_info(JsonDocument& /*doc*/)
     rpt_dev_info_json();
 }
 
+/*----------------------------------------*/
+typedef void (*json_v_hdlr_t)(JsonVariant v);
+typedef struct
+{
+    const char* key_str;
+    json_v_hdlr_t hdlr;
+}json_v_hdlr_map_t;
+
+static void json_allow_force_expo_ig_dist(JsonVariant v)
+{
+    void allow_force_expo_ig_dist(bool flag);
+    allow_force_expo_ig_dist(v.as<bool>());
+}
+
+static void json_set_dbg_lvl(JsonVariant v)
+{
+    void switch_dbg_print_lvl(LOG_LEVEL lvl);
+    switch_dbg_print_lvl((LOG_LEVEL)(v.as<signed int>()));
+}
+
+static json_v_hdlr_map_t gs_eng_dbg_handler_map[] =
+{
+    {JSON_KEY_ALLOW_FORCE_EXPO_IG_DIST, json_allow_force_expo_ig_dist},
+    {JSON_KEY_DBG_LVL, json_set_dbg_lvl},
+    {nullptr, nullptr},
+};
+static void eng_dbg_hdlr(JsonDocument& doc)
+{
+    JsonObject obj = doc.as<JsonObject>();
+    for (JsonPair kv : obj)
+    {
+        const char* key = kv.key().c_str();
+        JsonVariant value = kv.value();
+
+        for(int idx = 0; gs_eng_dbg_handler_map[idx].key_str && gs_eng_dbg_handler_map[idx].hdlr; ++idx)
+        {
+            if(!strcmp(key, gs_eng_dbg_handler_map[idx].key_str))
+            {
+                gs_eng_dbg_handler_map[idx].hdlr(value);
+                break;
+            }
+        }
+    }
+}
+
+/*----------------------------------------*/
 static json_msg_type_hdlr_map_t gs_cmd_handler_map[] =
 {
     {JSON_VAL_COMMAND_READ_MB_REG, json_cmd_read_mb_reg},
@@ -359,6 +405,7 @@ static json_msg_type_hdlr_map_t gs_json_msg_handler_map[] =
     {JSON_VAL_TYPE_CMD, cmd_hdlr},
     {JSON_VAL_TYPE_REG, json_cmd_write_mb_reg},
     {JSON_VAL_TYPE_NETWORK, json_config_network},
+    {JSON_VAL_TYPE_ENG_AND_DBG, eng_dbg_hdlr},
     {nullptr, nullptr},
 };
 
