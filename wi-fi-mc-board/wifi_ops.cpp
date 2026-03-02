@@ -8,10 +8,6 @@
 #include "wifi_ops.h"
 #include "debug_ctrl.h"
 
-static const char* gs_def_local_ip = "192.168.0.167";
-static const char* gs_def_gw = "192.168.0.1";
-static const char* gs_def_subnet_mask = "255.255.255.0";
-
 static wl_status_t gs_wifi_status = WL_IDLE_STATUS;
 static wifi_ssid_pwd_s_t gs_curr_wifi_ssid_pwd;
 
@@ -19,8 +15,6 @@ void wifi_init()
 {
     gs_curr_wifi_ssid_pwd.ssid[g_max_ssid_len] = 0;
     gs_curr_wifi_ssid_pwd.pwd[g_max_wifi_charpwd_len] = 0;
-
-    //wifi_config(gs_def_local_ip, gs_def_gw, gs_def_subnet_mask);
 
     gs_wifi_status = (wl_status_t)WiFi.status();
 }

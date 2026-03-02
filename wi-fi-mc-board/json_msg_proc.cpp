@@ -186,7 +186,7 @@ void rpt_mb_reg_json()
 
     bool ret = hv_controller_read_regs((uint16_t)HSV, reg_val_buf, MAX_HV_NORMAL_MB_REG_NUM);
 
-    LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_ERROR;
+    LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_WARN;
     DBG_PRINT(log_lvl, F("json_cmd_read_mb_reg read hv ret:")); DBG_PRINTLN(log_lvl, ret);
 
     JsonDocument ret_doc;
@@ -195,6 +195,22 @@ void rpt_mb_reg_json()
     {
         ret_doc[reg_rpt_str_list[idx]] = String(reg_val_buf[reg_rpt_list[idx]]);
     }
+    String mb_reg_val_json_doc_str;
+    serializeJson(ret_doc, mb_reg_val_json_doc_str);
+
+    g_scrn_serial.print(mb_reg_val_json_doc_str);
+}
+
+void rpt_chg_st_json(bool charger_on, bool charge_full)
+{
+    uint16_t reg_val = 0;
+
+    if(charger_on) reg_val |= MB_REG_DEV_INFO_BITS_CHG_CONN;
+    if(charge_full) reg_val |= MB_REG_DEV_INFO_BITS_BAT_FULL;
+
+    JsonDocument ret_doc;
+    ret_doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_REG;
+    ret_doc[EXT_MB_REG_DEV_INFO_BITS] = String(reg_val);
     String mb_reg_val_json_doc_str;
     serializeJson(ret_doc, mb_reg_val_json_doc_str);
 
@@ -276,7 +292,7 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
     {\
         String dbg_str = String("json_cmd_write_mb_reg write hv, reg from ") + String(reg_seg_1st) \
                         + String(" to ") + String(reg_seg_last) + String(". ret: ") + String(ret); \
-        LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_ERROR; \
+        LOG_LEVEL log_lvl = ret ? LOG_DEBUG : LOG_WARN; \
         DBG_PRINTLN(log_lvl, dbg_str); \
     }
 

@@ -9,9 +9,10 @@
 #include "json_msg_proc.h"
 
 #include "modbus_ops.h"
+#include "gpio_pin_process.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d014";
+constexpr const char g_wifi_mc_ver_str[] = "d015-d";
 
 bool g_tof_chip_working = false;
 bool g_allow_force_exposure_ignoring_dist = false;
@@ -35,7 +36,6 @@ static const unsigned long gs_tof_report_period_ms = 2000;
 static const unsigned long gs_mb_reg_rpt_period_ms = 4000;
 static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 
-static const unsigned long gs_expo_key_held_to_ms = 5000;
 
 WDT wdt;
 
@@ -68,19 +68,6 @@ VL53L0X_RangingMeasurementData_t measure;
 uint16_t readings[numReadings] = {0};
 int readIndex;
 uint32_t total;
-/*
-"key_name":"add" 或"sub"
-
-"key_val":"press"或"release"
-*/
-#define EXPO_KEY   PA27// PA12
-#define RANGE_LIGH_KEY PA30 //PA27
-#define XSHUTDOWN PA14
-#define BLC       PB3
-
-#define CHARGER_ST   PA12
-#define CHARG_SC_PG   PA15
-
 uint16_t calc_dis(bool req_ava = true)
 {
     static unsigned long ls_tof_pwr_off_time_ms; //when tof is power off
@@ -98,7 +85,7 @@ uint16_t calc_dis(bool req_ava = true)
     //now power on tof.
     if(ls_tof_resetting)
     {
-        digitalWrite(XSHUTDOWN, HIGH);
+        set_shutdown_pin(HIGH);
         ls_tof_resetting = false;
 
         g_tof_chip_working = true;
@@ -138,7 +125,7 @@ uint16_t calc_dis(bool req_ava = true)
         if(loop==numReadings)
         {
             DBG_PRINT(LOG_WARN, F("reset tof because it the data is frozen at ")); DBG_PRINTLN(LOG_WARN, reg0);
-            digitalWrite(XSHUTDOWN, LOW);
+            set_shutdown_pin(LOW);
             ls_tof_resetting = true;  ls_tof_pwr_off_time_ms = millis();
 
             g_tof_chip_working = false;
@@ -158,75 +145,6 @@ bool expo_is_allowed()
     return (curr_dist >= g_min_dist_for_expo_mm);
 }
 
-volatile static uint32_t gs_key_press_dbg_cnt = 0, gs_key_release_dbg_cnt = 0;
-
-volatile static bool gs_expo_key_pressed = false;
-volatile static unsigned long gs_expo_key_pressed_time;
-volatile static bool gs_expo_key_held_handled = true;
-static void expo_key_switched(uint32_t /*id*/, uint32_t /*event*/)
-{
-    if(HIGH == digitalRead(EXPO_KEY))
-    {//released
-        gs_expo_key_pressed = false;
-        gs_expo_key_held_handled = true;
-
-        gs_key_release_dbg_cnt++;
-    }
-    else
-    {
-        gs_expo_key_pressed = true;
-        gs_expo_key_pressed_time = millis();
-        gs_expo_key_held_handled = false;
-
-        gs_key_press_dbg_cnt++;
-    }
-}
-
-volatile static bool gs_range_light_key_pressed = false;
-volatile static bool gs_range_light_key_handled = true;
-static void range_light_key_switched(uint32_t /*id*/, uint32_t /*event*/)
-{
-    if(HIGH == digitalRead(RANGE_LIGH_KEY))
-    {//released
-        gs_range_light_key_pressed = false;
-        gs_range_light_key_handled = true;
-
-    }
-    else
-    {
-        gs_range_light_key_pressed = true;
-        gs_range_light_key_handled = false;
-
-    }
-}
-
-static void process_hardware_key()
-{
-    if(gs_expo_key_pressed)
-    {
-        /*
-        DBG_PRINT(LOG_ERROR, F("press and release cnt: ")); DBG_PRINT(LOG_ERROR, gs_key_press_dbg_cnt);
-        DBG_PRINT(LOG_ERROR, F(", ")); DBG_PRINTLN(LOG_ERROR, gs_key_release_dbg_cnt);
-        */
-
-        if(!gs_expo_key_held_handled && (millis() - gs_expo_key_pressed_time >= gs_expo_key_held_to_ms))
-        {
-            start_expo();
-            gs_expo_key_held_handled = true;
-        }
-    }
-
-    if(gs_range_light_key_pressed)
-    {
-        if(!gs_range_light_key_handled)
-        {
-            static bool turn_on = true;
-            switch_range_light(turn_on); turn_on = !turn_on;
-            gs_range_light_key_handled = true;
-        }
-    }
-}
-
 void setup(void)
 {
     Serial.begin(gs_scrn_serial_baud);
@@ -236,15 +154,7 @@ void setup(void)
     wdt.InitWatchdog(gs_wdt_dura_ms);  // setup watchdog
     wdt.StartWatchdog();     // enable watchdog timer
 
-    //加减档按钮
-    pinMode(EXPO_KEY, INPUT_IRQ_CHANGE);  //
-    digitalSetIrqHandler(EXPO_KEY, expo_key_switched);
-
-    pinMode(RANGE_LIGH_KEY, INPUT_IRQ_CHANGE);  //
-    digitalSetIrqHandler(RANGE_LIGH_KEY, range_light_key_switched);
-
-    pinMode(XSHUTDOWN, OUTPUT); 
-    digitalWrite(XSHUTDOWN, HIGH);
+    gpio_pin_init();
 
     //wait until serial port opens for native USB devices
     while (!Serial) { delay(1); }
@@ -273,8 +183,6 @@ void setup(void)
 
     wdt.RefreshWatchdog();
 
-    pinMode(BLC, OUTPUT);
-    digitalWrite(BLC, LOW);
 
     wifi_init();
 }

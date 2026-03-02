@@ -57,6 +57,9 @@ typedef enum
 #define EXPO_OP_START 2
 #define IS_MB_EXPOSING_REQ(reg_no, val) ((ExposureStart == (reg_no)) && (EXPO_OP_START == (val)))
 
+#define MB_REG_DEV_INFO_BITS_CHG_CONN ((uint16_t)0x0001)
+#define MB_REG_DEV_INFO_BITS_BAT_FULL ((uint16_t)0x0002)
+
 void modbus_tcp_server(bool work = true);
 void end_mb_tcp_server();
 
