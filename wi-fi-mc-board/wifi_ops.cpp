@@ -148,9 +148,11 @@ static void build_ap_list_json(String &json_msg_string)
 
     for (int thisNet = 0; thisNet < numSsid; thisNet++)
     {
-        JsonObject ap_info_json = ap_list_json.add<JsonObject>();
+        const char* ssid_str = WiFi.SSID(thisNet);
+        if(strlen(ssid_str) == 0) continue;
 
-        ap_info_json[JSON_KEY_SSID]     = WiFi.SSID(thisNet);
+        JsonObject ap_info_json = ap_list_json.add<JsonObject>();
+        ap_info_json[JSON_KEY_SSID]     = ssid_str;
 
         uint32_t sec;
         sec = WiFi.encryptionTypeEx(thisNet);
