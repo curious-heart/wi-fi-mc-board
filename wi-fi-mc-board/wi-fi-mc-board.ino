@@ -12,7 +12,7 @@
 #include "gpio_pin_process.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-h";
+constexpr const char g_wifi_mc_ver_str[] = "d015-i";
 
 bool g_tof_chip_working = false;
 bool gs_allow_force_exposure_ignoring_dist = false;

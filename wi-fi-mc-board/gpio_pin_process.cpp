@@ -106,6 +106,16 @@ static void charge_full_irq(uint32_t id, uint32_t event)
 }
 
 /*----------------------------------------*/
+uint16_t get_chg_st_in_reg_form()
+{
+    uint16_t reg_val = 0;
+
+    if(gs_charger_on_st) reg_val |= MB_REG_DEV_INFO_BITS_CHG_CONN;
+    if(gs_charge_full_st) reg_val |= MB_REG_DEV_INFO_BITS_BAT_FULL;
+
+    return reg_val;
+}
+
 void process_hardware_key()
 {
     if(gs_key_dbg_flag)
@@ -141,7 +151,9 @@ void process_hardware_key()
     }
 
     bool rpt_chg = ((gs_charger_on_st != gs_last_charger_on_st) || (gs_charge_full_st != gs_last_charge_full_st));
-    if(rpt_chg) rpt_chg_st_json(gs_charger_on_st, gs_charge_full_st);
+    //there is somewhat difficulty for screen to process json msg that does not contain all regs. 
+    //so we report all regs here, instead of report only chg st.
+    if(rpt_chg) rpt_mb_reg_json(); //rpt_dev_info_bits_json();
 
     gs_last_charger_on_st = gs_charger_on_st; gs_last_charge_full_st = gs_charge_full_st;
 }

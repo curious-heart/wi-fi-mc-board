@@ -1,7 +1,12 @@
 #ifndef __WIFI_OPS_H__
 #define __WIFI_OPS_H__
 
+#include <Arduino.h>
+#include <ArduinoJson.h>
+
 #include <WiFi.h>
+#include <WiFiServer.h>
+#include <WiFiClient.h>
 
 constexpr int g_max_ssid_len = 32;
 constexpr int g_max_wifi_charpwd_len = 63;
@@ -27,5 +32,6 @@ wl_status_t disconn_wifi(bool clear_ap = false);
 void rpt_network_info_json();
 
 void wifi_config(const char* ip_str, const char* gw_str, const char* mask_str);
+uint16_t wifi_rssi_level(int32_t * rssi_ptr = nullptr);
 
 #endif

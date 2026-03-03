@@ -15,6 +15,6 @@ typedef void (*json_doc_hdlr)(JsonDocument& doc);
 void rpt_dev_info_json();
 void rpt_tof_dis_json(uint16_t dis_mm);
 void rpt_mb_reg_json();
-void rpt_chg_st_json(bool charger_on, bool charge_full);
+void rpt_dev_info_bits_json();
 
 #endif

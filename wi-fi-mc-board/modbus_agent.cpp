@@ -1,11 +1,11 @@
-#include <WiFiServer.h>
-#include <WiFiClient.h>
-
 #include "common_defs.h"
+#include "debug_ctrl.h"
+
 #include "modbus_internal.h"
 #include "modbus_ops.h"
-
-#include "debug_ctrl.h"
+#include "gpio_pin_process.h"
+#include "dap_calc.h"
+#include "wifi_ops.h"
 
 #define MODBUS_TCP_PORT 502
 
@@ -49,6 +49,9 @@ static const int gs_mb_excption_resp_pdu_len = 2; //1 byte err, 1 byte execption
 static const int gs_mb_min_rtu_resp_adu_len = 5;
 
 static const int gs_mb_func_code_len = 1;
+
+uint16_t g_mb_normal_reg_val_cache[MAX_HV_NORMAL_MB_REG_NUM];
+uint16_t g_mb_ext_reg_val[MB_EXT_REG_NUM];
 
 static uint16_t modbus_crc16(const uint8_t* buf, uint16_t len)
 {
@@ -160,6 +163,46 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
     return complete_resp;
 }
 
+static void update_local_normal_mb_reg_cache(uint8_t * pdu, uint16_t pdu_len, uint16_t start_reg_no_in_read_req = 0)
+{
+    if(!pdu || pdu_len > gs_mb_max_pdu_len)
+    {
+        return;
+    }
+
+    uint8_t fc = pdu[0];
+    uint16_t start_reg_no, reg_cnt;
+    uint8_t * start_val_ptr = nullptr;
+    switch((mb_func_code_e_t)fc)
+    {
+        case MB_FUNC_CODE_READ_HREG:
+            //response pdu
+            start_reg_no = start_reg_no_in_read_req;
+            reg_cnt = pdu[1] / 2;
+            start_val_ptr = &pdu[2];
+            break;
+
+        case MB_FUNC_CODE_WRITE_SINGLE_REG:
+            //request pdu
+            start_reg_no = GET_V_FROM_PDU(pdu, 1);
+            reg_cnt = 1;
+            start_val_ptr = &pdu[3];
+            break;
+
+        default: // MB_FUNC_CODE_WRITE_MULI_REGS:
+            //request pdu
+            start_reg_no = GET_V_FROM_PDU(pdu, 1);
+            reg_cnt = GET_V_FROM_PDU(pdu, 3);
+            start_val_ptr = &pdu[6];
+            break;
+    }
+    for(uint16_t idx = 0; idx < reg_cnt; ++idx)
+    {
+        g_mb_normal_reg_val_cache[start_reg_no + idx] = GET_V_FROM_PDU(start_val_ptr, idx * 2);
+    }
+}
+
+static uint16_t gs_curr_start_reg_no_in_read_req;
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 {
     uint16_t len = 0;
@@ -178,7 +221,20 @@ bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 
     g_pdb_serial.write(gs_mb_rtu_adu_buf, len);
 
+    {//update local reg cache
+        uint8_t fc = rtu_pdu[0];
+        if(MB_FUNC_CODE_WRITE_SINGLE_REG == fc || MB_FUNC_CODE_WRITE_MULI_REGS == fc)
+        {
+            update_local_normal_mb_reg_cache(rtu_pdu, pdu_len);
+        }
+        else //read. record the start reg no.
+        {
+            gs_curr_start_reg_no_in_read_req = GET_V_FROM_PDU(rtu_pdu, 1);
+        }
+    }
+
     gs_rtu_send_time = millis();
+
     return true;
 }
 
@@ -200,7 +256,20 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
     }
     if(rtu_pdu) *rtu_pdu = &gs_mb_rtu_adu_buf[1];
     if(pdu_len_ptr) *pdu_len_ptr = pdu_len;
-    return (complet_msg && crc_ok && !timeout);
+
+    bool ret = (complet_msg && crc_ok && !timeout);
+
+    if(ret)
+    {//update local reg cache
+        uint8_t* pdu = &gs_mb_rtu_adu_buf[1];
+        uint8_t fc = pdu[0];
+        if(MB_FUNC_CODE_READ_HREG == fc)
+        {
+            update_local_normal_mb_reg_cache(pdu, pdu_len, gs_curr_start_reg_no_in_read_req);
+        }
+    }
+
+    return ret;
 }
 
 /*------------------------------*/
@@ -352,6 +421,87 @@ static bool filter_write_reg_value(uint8_t * rtu_pdu, uint16_t pdu_len)
     return ret;
 }
 
+uint16_t calc_dis(bool req_ava);
+uint16_t* read_mb_ext_regs(uint16_t start_reg_no, int reg_cnt)
+{
+    if(!VALID_EXT_REG_NO(start_reg_no) || (reg_cnt <= 0) || (reg_cnt > MB_EXT_REG_NUM)) 
+    {
+        DBG_PRINT(LOG_WARN, F("ext-reg read: invalid ext reg start-number or cnt: "));
+        DBG_PRINT(LOG_WARN, start_reg_no); DBG_PRINT(LOG_WARN, F(", ")); DBG_PRINTLN(LOG_WARN, reg_cnt);
+        return nullptr;
+    }
+    for(int idx = 0; idx < reg_cnt; ++idx)
+    {
+        hv_mb_reg_e_t reg_no = (hv_mb_reg_e_t)(start_reg_no + idx);
+        uint16_t val = 0;
+        switch(reg_no)
+        {
+            case EXT_MB_REG_CHARGER: 
+                val = get_chg_st_in_reg_form() & MB_REG_DEV_INFO_BITS_CHG_CONN;
+                break;
+
+            case EXT_MB_REG_DAP_HP:
+            case EXT_MB_REG_DAP_LP:
+                {
+                    float dap_val = calculate_DAP_value(g_mb_normal_reg_val_cache[VoltSet],
+                                                        g_mb_normal_reg_val_cache[FilamentSet],
+                                                        g_mb_normal_reg_val_cache[ExposureTime]);
+                    if(EXT_MB_REG_DAP_HP == reg_no)
+                    {
+                        set_float_DAP_to_mapping_reg(dap_val, nullptr, &val);
+                    }
+                    else
+                    {
+                        set_float_DAP_to_mapping_reg(dap_val, &val, nullptr);
+                    }
+                }
+                break;
+
+            case EXT_MB_REG_DISTANCE:
+                val = calc_dis(false);
+                break;
+
+            case EXT_MB_REG_WIFI_WAN_SIG_AND_BAT_LVL:
+                val  = (g_mb_normal_reg_val_cache[BatteryLevel] << 8) | ((uint16_t)(wifi_rssi_level()) & 0xFF);
+                break;
+
+            case EXT_MB_REG_DEV_INFO_BITS:
+                val = get_chg_st_in_reg_form();
+
+                if(WL_CONNECTED == curr_wifi_status())
+                {
+                    val |= MB_REG_DEV_INFO_BITS_WIFI_WAN_CONN;
+                }
+                break;
+
+            default:
+                val = g_mb_ext_reg_val[reg_no - FIRST_EXT_REG_NO];
+                break;
+        }
+
+        g_mb_ext_reg_val[reg_no - FIRST_EXT_REG_NO] = val;
+    }
+    return g_mb_ext_reg_val;
+}
+
+bool write_mb_ext_regs(uint16_t start_reg_no, uint16_t * val_buf, int reg_cnt)
+{
+    //currently only on ext-reg allow writing. so we implement this func in the minimum way.
+    //in future if other regs are allowed, just expanding this func.
+
+    if((start_reg_no != EXT_TOF_DIST_COMP_MM) && (reg_cnt != 1))
+    {
+        DBG_PRINT(LOG_WARN, F("ext-reg write: invalid ext reg start-number or cnt: "));
+        DBG_PRINT(LOG_WARN, start_reg_no); DBG_PRINT(LOG_WARN, F(", ")); DBG_PRINTLN(LOG_WARN, reg_cnt);
+        return false;
+    }
+    if(!val_buf) return false;
+
+    g_mb_ext_reg_val[start_reg_no - FIRST_EXT_REG_NO] = val_buf[0];
+
+    return true;
+}
+
 static void try_handle_tcp_request(int idx)
 {
     if(!read_tcp_req_adu(idx))
@@ -367,6 +517,89 @@ static void try_handle_tcp_request(int idx)
     {
         send_tcp_exception(idx, fc, MB_EXCP_ILLEGAL_FUNC);
         return;
+    }
+
+    if(MB_FUNC_CODE_READ_HREG == fc)
+    {
+        uint16_t start_reg_no, reg_cnt;
+        start_reg_no = GET_V_FROM_PDU(x.pdu, 1);
+        reg_cnt = GET_V_FROM_PDU(x.pdu, 3);
+
+        if(start_reg_no >= FIRST_EXT_REG_NO)
+        {
+            uint16_t * buf = read_mb_ext_regs(start_reg_no, reg_cnt);
+
+            if(buf)
+            {
+                //use gs_mb_rtu_adu_buf as it is read from rtu: the 1st byte is addr. so the pdu is from the 2nd byte.
+                gs_mb_rtu_adu_buf[1] = MB_FUNC_CODE_READ_HREG;
+                gs_mb_rtu_adu_buf[2] = (uint8_t)(reg_cnt * 2);
+                for(int idx = 0; idx < reg_cnt; ++idx)
+                {
+                    gs_mb_rtu_adu_buf[3 + idx * 2]     = UINT16_HI_BYTE(buf[idx]);
+                    gs_mb_rtu_adu_buf[3 + idx * 2 + 1] = UINT16_LO_BYTE(buf[idx]);
+                }
+                send_tcp_response(idx, &gs_mb_rtu_adu_buf[1], 2 + reg_cnt * 2);
+            }
+            else
+            {
+                send_tcp_exception(idx, fc, MB_GW_TGT_DEV_FAILED_TO_RESP);
+            }
+
+            return;
+        }
+    }
+    else
+    {//write reg
+        uint16_t start_reg_no, reg_cnt;
+        uint8_t *reg_val_buf_in_pdu;
+
+        start_reg_no = GET_V_FROM_PDU(x.pdu, 1);
+        if(MB_FUNC_CODE_WRITE_SINGLE_REG == fc)
+        {
+            reg_cnt = 1;
+            reg_val_buf_in_pdu = &x.pdu[3];
+        }
+        else
+        {//MB_FUNC_CODE_WRITE_MULI_REGS
+            reg_cnt = GET_V_FROM_PDU(x.pdu, 3);
+            reg_val_buf_in_pdu = &x.pdu[6];
+        }
+
+        if(start_reg_no >= FIRST_EXT_REG_NO)
+        {
+            uint16_t reg_val_buf[MB_EXT_REG_NUM];
+            for(uint16_t idx = 0; idx < reg_cnt; ++idx)
+            {
+                reg_val_buf[idx] = GET_V_FROM_PDU(reg_val_buf_in_pdu, idx * 2);
+            }
+            if(write_mb_ext_regs(start_reg_no, reg_val_buf, reg_cnt))
+            {
+                //use gs_mb_rtu_adu_buf as it is read from rtu: the 1st byte is addr. so the pdu is from the 2nd byte.
+                gs_mb_rtu_adu_buf[1] = fc;
+                gs_mb_rtu_adu_buf[2] = UINT16_HI_BYTE(start_reg_no);
+                gs_mb_rtu_adu_buf[3] = UINT16_LO_BYTE(start_reg_no);
+
+                if(MB_FUNC_CODE_WRITE_SINGLE_REG == fc)
+                {
+                    gs_mb_rtu_adu_buf[4] = reg_val_buf_in_pdu[0];
+                    gs_mb_rtu_adu_buf[5] = reg_val_buf_in_pdu[1];
+                }
+                else
+                {
+                    gs_mb_rtu_adu_buf[4] = UINT16_HI_BYTE(reg_cnt);
+                    gs_mb_rtu_adu_buf[5] = UINT16_LO_BYTE(reg_cnt);
+                }
+
+                send_tcp_response(idx, &gs_mb_rtu_adu_buf[1], 5);
+            }
+            else
+            {
+                send_tcp_exception(idx, fc, MB_GW_TGT_DEV_FAILED_TO_RESP);
+            }
+
+            return;
+        }
     }
 
     DBG_PRINTLN(LOG_DEBUG, F("send mb rtu request"));

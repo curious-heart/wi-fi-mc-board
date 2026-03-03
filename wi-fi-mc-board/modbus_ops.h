@@ -30,7 +30,7 @@ typedef enum
 
     EXT_MB_REG_START_FLAG = 100, /*extend register start flag.*/
     /*Below are extend register, that is, they are processed internally by server and not passed to hv controller.*/ 
-    EXT_MB_REG_DOSE_ADJ = 101,                       /*+/- key event*/
+    EXT_MB_REG_DOSE_ADJ = 101,                       /*+/- key event. not used in hd version with touch screen.*/
     EXT_MB_REG_CHARGER = 102,                       /*charger plug in/pull out*/
     EXT_MB_REG_DAP_HP = 103,                       /*High part of a float of DAP(Dose Area Product), big endian.*/
     EXT_MB_REG_DAP_LP = 104,                       /*Low part of a float of DAP, big endian.*/
@@ -38,8 +38,10 @@ typedef enum
     EXT_MB_REG_HOTSPOT_ST = 106,           /*uint16，本机Wi-Fi热点状态。*/
                                               /*0xFFFF表示Wi-Fi热点未开启；*/
                                               /*其它值表示热点开启，数值指示热点上连接的Client数量*/
+                                            /*not used in non-hotspot hd version.*/
     EXT_MB_REG_CELLUAR_ST = 107,              /*uint16，高字节表示蜂窝网的信号格数，有效值0~5；*/
-                                                         /*低字节表示蜂窝网状态：0-无服务；1-3G；2-4G；3-5G*/
+                                             /*低字节表示蜂窝网状态：0-无服务；1-3G；2-4G；3-5G*/
+                                             /*not used in version without cellular.*/
     EXT_MB_REG_WIFI_WAN_SIG_AND_BAT_LVL = 108, /*uint16，高字节指示电池电量(BatteryLevel)；*/
                                                            /*低字节指示WAN侧Wi-Fi信号格数，有效值0~4*/
     EXT_MB_REG_DEV_INFO_BITS = 109, /*uint16的每个bit指示一个设备的二值状态信息：*/
@@ -59,6 +61,11 @@ typedef enum
 
 #define MB_REG_DEV_INFO_BITS_CHG_CONN ((uint16_t)0x0001)
 #define MB_REG_DEV_INFO_BITS_BAT_FULL ((uint16_t)0x0002)
+#define MB_REG_DEV_INFO_BITS_WIFI_WAN_CONN ((uint16_t)0x0004)
+
+#define FIRST_EXT_REG_NO EXT_MB_REG_CHARGER
+#define VALID_EXT_REG_NO(r) (FIRST_EXT_REG_NO <= (r) && (r) < HV_MB_REG_END_FLAG)
+#define MB_EXT_REG_NUM (HV_MB_REG_END_FLAG - FIRST_EXT_REG_NO)
 
 void modbus_tcp_server(bool work = true);
 void end_mb_tcp_server();
@@ -66,11 +73,16 @@ void end_mb_tcp_server();
 bool hv_controller_write_single_reg(uint16_t reg_addr, uint16_t value);
 bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int reg_cnt);
 bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cnt);
+uint16_t* read_mb_ext_regs(uint16_t start_reg_no, int reg_cnt);
+bool write_mb_ext_regs(uint16_t start_reg_no, uint16_t * val_buf, int reg_cnt);
 
 /*may return nullptr (when reading HSV reg fails.*/
 const char* get_pdb_ver_str();
 
 void start_expo();
 void switch_range_light(bool on);
+
+extern uint16_t g_mb_normal_reg_val_cache[];
+extern uint16_t g_mb_ext_reg_val[];
 
 #endif

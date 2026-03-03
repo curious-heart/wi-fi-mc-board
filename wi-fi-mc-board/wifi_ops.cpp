@@ -19,6 +19,22 @@ void wifi_init()
     gs_wifi_status = (wl_status_t)WiFi.status();
 }
 
+uint16_t wifi_rssi_level(int32_t * rssi_ptr)
+{
+    int32_t rssi = WiFi.RSSI();
+    uint16_t lvl = 0;
+
+    if(rssi_ptr) *rssi_ptr = rssi;
+
+    if(rssi < -90) lvl = 0;
+    else if(rssi < -78) lvl = 1;
+    else if(rssi < - 67) lvl = 2;
+    else if(rssi < -55) lvl = 3;
+    else lvl = 4;
+
+    return lvl;
+}
+
 wl_status_t curr_wifi_status()
 {
     return (gs_wifi_status = (wl_status_t)WiFi.status());

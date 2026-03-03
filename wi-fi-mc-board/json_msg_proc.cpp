@@ -6,6 +6,8 @@
 #include "json_keys.h"
 
 #include "modbus_ops.h"
+#include "gpio_pin_process.h"
+#include "wifi_ops.h"
 
 #define JSON_RX_BUF_SIZE 1024
 
@@ -166,8 +168,32 @@ static void json_cmd_read_mb_reg(JsonDocument& /*doc*/)
     rpt_mb_reg_json();
 }
 
+/*add ext reg key-val pair into doc*/
+static void add_ext_reg_to_json(JsonDocument &doc)
+{//ext reg: 102 ~ 105, 108~110
+#define ITEM_ELE(e) e
+#define ITEM_LIST \
+    {\
+        ITEM_ELE(EXT_MB_REG_CHARGER), ITEM_ELE(EXT_MB_REG_DAP_HP), ITEM_ELE(EXT_MB_REG_DAP_LP), \
+        ITEM_ELE(EXT_MB_REG_DISTANCE), ITEM_ELE(EXT_MB_REG_WIFI_WAN_SIG_AND_BAT_LVL), \
+        ITEM_ELE(EXT_MB_REG_DEV_INFO_BITS), ITEM_ELE(EXT_TOF_DIST_COMP_MM), \
+    }
+    static hv_mb_reg_e_t ext_reg_rpt_list[] = ITEM_LIST;
+#undef ITEM_ELE
+#define ITEM_ELE(e) String(e)
+    static String ext_reg_rpt_str_list[] = ITEM_LIST;
+
+    read_mb_ext_regs(FIRST_EXT_REG_NO, MB_EXT_REG_NUM);
+    for(size_t idx = 0; idx < ARRAY_ITEM_CNT(ext_reg_rpt_list); ++idx)
+    {
+        doc[ext_reg_rpt_str_list[idx]] = String(g_mb_ext_reg_val[ext_reg_rpt_list[idx] - FIRST_EXT_REG_NO]);
+    }
+}
+
 void rpt_mb_reg_json()
-{//4~12, 14, 15, 21  
+{//4~12, 14, 15, 21, and ext reg
+#undef ITEM_ELE
+#undef ITEM_LIST
 #define ITEM_ELE(e) e
 #define ITEM_LIST \
     {\
@@ -195,18 +221,23 @@ void rpt_mb_reg_json()
     {
         ret_doc[reg_rpt_str_list[idx]] = String(reg_val_buf[reg_rpt_list[idx]]);
     }
+
+    add_ext_reg_to_json(ret_doc);
+
     String mb_reg_val_json_doc_str;
     serializeJson(ret_doc, mb_reg_val_json_doc_str);
 
     g_scrn_serial.print(mb_reg_val_json_doc_str);
 }
 
-void rpt_chg_st_json(bool charger_on, bool charge_full)
+void rpt_dev_info_bits_json()
 {
-    uint16_t reg_val = 0;
+    uint16_t reg_val = get_chg_st_in_reg_form();
 
-    if(charger_on) reg_val |= MB_REG_DEV_INFO_BITS_CHG_CONN;
-    if(charge_full) reg_val |= MB_REG_DEV_INFO_BITS_BAT_FULL;
+    if(WL_CONNECTED == curr_wifi_status())
+    {
+        reg_val |= MB_REG_DEV_INFO_BITS_WIFI_WAN_CONN;
+    }
 
     JsonDocument ret_doc;
     ret_doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_REG;
@@ -364,7 +395,15 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
 
         if((!new_reg_seg && (reg_seg_last + 1 != reg_no)) || (idx >= MAX_HV_NORMAL_MB_REG_NUM))
         {
-            bool ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+            bool ret;
+            if(reg_seg_1st >= FIRST_EXT_REG_NO)
+            {
+                ret = write_mb_ext_regs(reg_seg_1st, reg_val_buf, idx);
+            }
+            else
+            {
+                ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+            }
             new_reg_seg = true;
 
             DBG_WRITE_LOG;
@@ -387,7 +426,15 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
 
     if(idx > 0)
     {
-        bool ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+        bool ret;
+        if(reg_seg_1st >= FIRST_EXT_REG_NO)
+        {
+            ret = write_mb_ext_regs(reg_seg_1st, reg_val_buf, idx);
+        }
+        else
+        {
+            ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+        }
         DBG_WRITE_LOG;
     }
 #undef DBG_WRITE_LOG
