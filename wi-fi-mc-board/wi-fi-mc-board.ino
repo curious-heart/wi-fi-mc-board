@@ -10,11 +10,11 @@
 
 #include "modbus_ops.h"
 #include "gpio_pin_process.h"
+#include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-j";
+constexpr const char g_wifi_mc_ver_str[] = "d015-k";
 
-bool g_tof_chip_working = false;
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
 
@@ -29,7 +29,6 @@ Stream& g_dbg_serial = Serial;
 static constexpr uint32_t gs_wdt_dura_ms = 30000;
 static constexpr uint32_t gs_wdt_reset_wait_ms = 10000;
 
-static const unsigned long gs_tof_pwr_on_off_gap_ms = 3000;
 
 static const unsigned long gs_maitain_nw_period_ms = 3000;
 static const unsigned long gs_tof_report_period_ms = 2000;
@@ -38,8 +37,6 @@ static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 
 
 WDT wdt;
-
-Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 
 const char* get_dev_ver_str()
 {
@@ -61,79 +58,6 @@ const char* get_dev_ver_str()
     }
 
     return ls_ver_str;
-}
-
-VL53L0X_RangingMeasurementData_t measure;
-#define numReadings 20
-uint16_t readings[numReadings] = {0};
-int readIndex;
-uint32_t total;
-uint16_t calc_dis(bool req_ava = true)
-{
-    static unsigned long ls_tof_pwr_off_time_ms; //when tof is power off
-    static bool ls_tof_resetting = false;
-    static const uint16_t ls_invalid_dis = (uint16_t)-1;
-
-    uint16_t single_val;
-
-    //tof is powered off. wait some time.
-    if(ls_tof_resetting && (millis() - ls_tof_pwr_off_time_ms < gs_tof_pwr_on_off_gap_ms))
-    {
-        return ls_invalid_dis;
-    }
-
-    //now power on tof.
-    if(ls_tof_resetting)
-    {
-        set_shutdown_pin(HIGH);
-        ls_tof_resetting = false;
-
-        g_tof_chip_working = true;
-    }
-
-    lox.rangingTest(&measure, false);  // pass in 'true' to get debug data printout!
-
-    if (measure.RangeStatus != 4) {  // phase failures have incorrect data
-    } else {
-      return ls_invalid_dis;  //超限
-    }
-
-    total = total - readings[readIndex];
-    // 读入当前旋转电位计的数值，
-    // 并将其存储到数组的最后一位。
-    single_val = measure.RangeMilliMeter;
-    readings[readIndex] = single_val;
-    // 将最新读入的数值加入到总值中
-    total = total + readings[readIndex++];
-    // 将数组指示索引值加1
-    // 判断数组指示索引是否超出数组范围，
-    // 如果是，将数组指示索引重置为0
-    if (readIndex >= numReadings) {
-      readIndex = 0;
-    }
-
-    uint16_t reg0 = readings[0];
-    if((reg0 != 8191)&& (reg0 != 0))
-    {
-        int loop=0;
-        for(; loop< numReadings; loop++)
-        {
-          if(readings[loop] != reg0)
-            break;
-        }
-
-        if(loop==numReadings)
-        {
-            DBG_PRINT(LOG_WARN, F("reset tof because it the data is frozen at ")); DBG_PRINTLN(LOG_WARN, reg0);
-            set_shutdown_pin(LOW);
-            ls_tof_resetting = true;  ls_tof_pwr_off_time_ms = millis();
-
-            g_tof_chip_working = false;
-            return reg0;
-        }
-    }
-    // 计算平均值
-    return req_ava ? (total / numReadings) : single_val ;
 }
 
 static bool gs_mb_reg_written = false, gs_just_rpt_mb_reg = false;
@@ -179,25 +103,9 @@ void setup(void)
 
     g_dbg_serial.print(F("\n\nstart to run: ")); g_dbg_serial.println(g_wifi_mc_ver_str);
 
-    g_dbg_serial.println(F("init Adafruit VL53L0X......"));
-    if (!lox.begin())
-    {
-        g_tof_chip_working = false;
-        g_dbg_serial.println(F("Failed to boot VL53L0X, expo is disabled."));
-        /*
-        wdt.StopWatchdog();
-        wdt.InitWatchdog(gs_wdt_reset_wait_ms);
-        while(1);
-        */
-    }
-    else
-    {
-        g_tof_chip_working = true;
-        g_dbg_serial.println(F("VL53L0X started\n"));
-    }
+    tof_chip_init();
 
     wdt.RefreshWatchdog();
-
 
     wifi_init();
 }

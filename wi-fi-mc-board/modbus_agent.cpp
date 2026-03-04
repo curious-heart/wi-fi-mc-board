@@ -6,6 +6,7 @@
 #include "gpio_pin_process.h"
 #include "dap_calc.h"
 #include "wifi_ops.h"
+#include "tof_dist.h"
 
 #define MODBUS_TCP_PORT 502
 
@@ -425,7 +426,6 @@ static bool filter_write_reg_value(uint8_t * rtu_pdu, uint16_t pdu_len)
     return ret;
 }
 
-uint16_t calc_dis(bool req_ava);
 uint16_t* read_mb_ext_regs(uint16_t start_reg_no, int reg_cnt)
 {
     if(!VALID_EXT_REG_NO(start_reg_no) || (reg_cnt <= 0) || (reg_cnt > MB_EXT_REG_NUM)) 
