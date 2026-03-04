@@ -13,7 +13,7 @@
 #include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-k";
+constexpr const char g_wifi_mc_ver_str[] = "d015-l";
 
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
