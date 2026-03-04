@@ -249,7 +249,7 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
         if(curr - gs_rtu_send_time >= timeout_ms)
         {
             timeout = true;
-            DBG_PRINTLN(LOG_WARN, F("read rtu response timeout!"));
+            DBG_PRINTLN(LOG_ERROR, F("read rtu response timeout!"));
 
             gs_rtu_rx_len = 0;
             break;

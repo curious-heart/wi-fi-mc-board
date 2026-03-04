@@ -13,7 +13,7 @@
 #include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-l";
+constexpr const char g_wifi_mc_ver_str[] = "d015-q";
 
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
@@ -162,13 +162,22 @@ void loop(void)
         ls_last_dev_inf_rpt_time = millis();
     }
 
-    if(gs_mb_reg_written || gs_just_rpt_mb_reg || ((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms))
+    if(gs_mb_reg_written)
     {
         rpt_mb_reg_json();
         ls_last_reg_rpt_time = millis();
 
-        gs_mb_reg_written = false;
-        gs_just_rpt_mb_reg = false;
+        set_mb_reg_written_flag(false);
+    } 
+    else if((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
+    {
+        if(!gs_just_rpt_mb_reg)
+        {
+            rpt_mb_reg_json();
+        }
+        set_just_rpt_mb_reg_flag(false);
+
+        ls_last_reg_rpt_time = millis();
     }
 
     wdt.RefreshWatchdog();
