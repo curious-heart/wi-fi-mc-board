@@ -12,7 +12,7 @@
 #include "gpio_pin_process.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-i";
+constexpr const char g_wifi_mc_ver_str[] = "d015-j";
 
 bool g_tof_chip_working = false;
 bool gs_allow_force_exposure_ignoring_dist = false;
@@ -33,7 +33,7 @@ static const unsigned long gs_tof_pwr_on_off_gap_ms = 3000;
 
 static const unsigned long gs_maitain_nw_period_ms = 3000;
 static const unsigned long gs_tof_report_period_ms = 2000;
-static const unsigned long gs_mb_reg_rpt_period_ms = 4000;
+static const unsigned long gs_mb_reg_rpt_period_ms = 10000;
 static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 
 
@@ -136,6 +136,16 @@ uint16_t calc_dis(bool req_ava = true)
     return req_ava ? (total / numReadings) : single_val ;
 }
 
+static bool gs_mb_reg_written = false, gs_just_rpt_mb_reg = false;
+void set_mb_reg_written_flag(bool wr)
+{
+    gs_mb_reg_written = wr;
+}
+void set_just_rpt_mb_reg_flag(bool rpt)
+{
+    gs_just_rpt_mb_reg = rpt;
+}
+
 void allow_force_expo_ig_dist(bool flag)
 {
     gs_allow_force_exposure_ignoring_dist = flag;
@@ -199,13 +209,6 @@ void loop(void)
                          ls_maitain_nw_rpt_time;
     static wl_status_t ls_last_rec_wifi_staus = WL_DISCONNECTED;
  
-   /*
-    //急停状态，只显示急停  别的不显示
-    while (atoi(regValue[Addr4]) & 0x10) {
-      //"系统急停，请确认状态后,长按开机键解除急停!"
-    }
-  */
- 
     /* process hard-key */
     process_hardware_key();
  
@@ -234,7 +237,7 @@ void loop(void)
     json_msg_recv_proc(g_scrn_serial);
 
     /* process msg from modbus client */
-     modbus_tcp_server(WL_CONNECTED == curr_wifi_status());
+    modbus_tcp_server(WL_CONNECTED == curr_wifi_status());
 
     /* report tof distance */
     uint16_t average = calc_dis();
@@ -250,10 +253,14 @@ void loop(void)
         rpt_dev_info_json();
         ls_last_dev_inf_rpt_time = millis();
     }
-    if((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
+
+    if(gs_mb_reg_written || gs_just_rpt_mb_reg || ((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms))
     {
         rpt_mb_reg_json();
         ls_last_reg_rpt_time = millis();
+
+        gs_mb_reg_written = false;
+        gs_just_rpt_mb_reg = false;
     }
 
     wdt.RefreshWatchdog();

@@ -14,6 +14,8 @@
 #define XSHUTDOWN PA14
 #define BLC       PB3
 
+void set_just_rpt_mb_reg_flag(bool rpt);
+
 static const unsigned long gs_expo_key_held_to_ms = 5000;
 
 /*begin: these vars are for debug*/
@@ -151,9 +153,14 @@ void process_hardware_key()
     }
 
     bool rpt_chg = ((gs_charger_on_st != gs_last_charger_on_st) || (gs_charge_full_st != gs_last_charge_full_st));
-    //there is somewhat difficulty for screen to process json msg that does not contain all regs. 
-    //so we report all regs here, instead of report only chg st.
-    if(rpt_chg) rpt_mb_reg_json(); //rpt_dev_info_bits_json();
+    if(rpt_chg)
+    {
+        //there is somewhat difficulty for screen to process json msg that does not contain all regs. 
+        //so we report all regs here, instead of report only chg st.
+        rpt_mb_reg_json(); //rpt_dev_info_bits_json();
+
+        set_just_rpt_mb_reg_flag(true);
+    }
 
     gs_last_charger_on_st = gs_charger_on_st; gs_last_charge_full_st = gs_charge_full_st;
 }

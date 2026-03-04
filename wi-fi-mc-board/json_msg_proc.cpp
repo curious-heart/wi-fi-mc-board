@@ -11,6 +11,8 @@
 
 #define JSON_RX_BUF_SIZE 1024
 
+void set_just_rpt_mb_reg_flag(bool rpt);
+
 /*
  * NOTE:
  * This function is NOT thread-safe.
@@ -166,6 +168,8 @@ typedef struct
 static void json_cmd_read_mb_reg(JsonDocument& /*doc*/)
 {
     rpt_mb_reg_json();
+
+    set_just_rpt_mb_reg_flag(true);
 }
 
 /*add ext reg key-val pair into doc*/

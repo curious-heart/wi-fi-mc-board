@@ -75,7 +75,7 @@ typedef enum
 
 static GwState gwState = GW_IDLE;
 
-
+void set_mb_reg_written_flag(bool wr);
 /*------------------------------*/
 static uint8_t gs_mb_rtu_adu_buf[gs_mb_max_rtu_adu_len];
 static unsigned long gs_rtu_send_time = 0;
@@ -266,6 +266,10 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
         if(MB_FUNC_CODE_READ_HREG == fc)
         {
             update_local_normal_mb_reg_cache(pdu, pdu_len, gs_curr_start_reg_no_in_read_req);
+        }
+        else
+        {//write reg
+            set_mb_reg_written_flag(true);
         }
     }
 
@@ -498,6 +502,8 @@ bool write_mb_ext_regs(uint16_t start_reg_no, uint16_t * val_buf, int reg_cnt)
     if(!val_buf) return false;
 
     g_mb_ext_reg_val[start_reg_no - FIRST_EXT_REG_NO] = val_buf[0];
+
+    set_mb_reg_written_flag(true);
 
     return true;
 }
