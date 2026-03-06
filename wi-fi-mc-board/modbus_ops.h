@@ -67,6 +67,8 @@ typedef enum
 #define VALID_EXT_REG_NO(r) (FIRST_EXT_REG_NO <= (r) && (r) < HV_MB_REG_END_FLAG)
 #define MB_EXT_REG_NUM (HV_MB_REG_END_FLAG - FIRST_EXT_REG_NO)
 
+#define MAX_PDB_VER_STR_LEN 6
+
 void modbus_tcp_server(bool work = true);
 void end_mb_tcp_server();
 
@@ -81,6 +83,9 @@ const char* get_pdb_ver_str();
 
 void start_expo();
 void switch_range_light(bool on);
+
+void set_pdb_ver_str(uint16_t ver);
+bool pdb_ver_getted();
 
 extern uint16_t g_mb_normal_reg_val_cache[];
 extern uint16_t g_mb_ext_reg_val[];

@@ -13,7 +13,7 @@
 #include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-q";
+constexpr const char g_wifi_mc_ver_str[] = "d015-s";
 
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
@@ -137,7 +137,6 @@ void loop(void)
             ls_last_rec_wifi_staus = curr_status;
         }
 
-        start_up = false;
         ls_maitain_nw_rpt_time = millis();
     }
  
@@ -156,12 +155,6 @@ void loop(void)
     }
 
     /* other periodically ops*/
-    if((millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
-    {
-        rpt_dev_info_json();
-        ls_last_dev_inf_rpt_time = millis();
-    }
-
     if(gs_mb_reg_written)
     {
         rpt_mb_reg_json();
@@ -169,7 +162,7 @@ void loop(void)
 
         set_mb_reg_written_flag(false);
     } 
-    else if((millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
+    else if(start_up || (millis() - ls_last_reg_rpt_time) >= gs_mb_reg_rpt_period_ms)
     {
         if(!gs_just_rpt_mb_reg)
         {
@@ -180,5 +173,13 @@ void loop(void)
         ls_last_reg_rpt_time = millis();
     }
 
+    if(start_up || (millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
+    {
+        rpt_dev_info_json();
+        ls_last_dev_inf_rpt_time = millis();
+    }
+
     wdt.RefreshWatchdog();
+
+    start_up = false;
 }

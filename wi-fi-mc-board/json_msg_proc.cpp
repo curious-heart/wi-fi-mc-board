@@ -232,6 +232,11 @@ void rpt_mb_reg_json()
     serializeJson(ret_doc, mb_reg_val_json_doc_str);
 
     g_scrn_serial.print(mb_reg_val_json_doc_str);
+
+    if(ret && !pdb_ver_getted())
+    {
+        set_pdb_ver_str(reg_val_buf[HSV]);
+    }
 }
 
 void rpt_dev_info_bits_json()
@@ -267,6 +272,7 @@ void rpt_dev_info_json()
 
     JsonDocument doc;
     doc[JSON_KEY_JSON_TYPE] = JSON_VAL_TYPE_INFO;
+    doc[JSON_KEY_MCB_TYPE] = JSON_VAL_MCB_WIFI;
     doc[JSON_KEY_MAC_ADDR] = mac_str;
     doc[JSON_KEY_VERSION] = dev_ver_str;
 

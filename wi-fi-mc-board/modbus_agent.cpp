@@ -791,41 +791,40 @@ bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cn
     return ret;
 }
 
-const char* get_pdb_ver_str()
+static char gs_pdb_ver_str[MAX_PDB_VER_STR_LEN + 1] = {0};
+static bool gs_pdb_ver_getted = false;
+bool pdb_ver_getted()
 {
-#define MAX_PDB_VER_STR_LEN 6
-    static char ver_str[MAX_PDB_VER_STR_LEN + 1] = {0};
-    static bool getted = false;
+    return gs_pdb_ver_getted;
+}
 
+void set_pdb_ver_str(uint16_t ver)
+{
 #define BYTE_2_3DGIT_STR \
     {\
         for(int j = 0; j < 3; ++j)\
         {\
-            ver_str[idx--] = (pv % 10) + '0';\
+            gs_pdb_ver_str[idx--] = (pv % 10) + '0';\
             pv = pv / 10;\
         }\
     }
-    if(!getted)
-    {
-        uint16_t ver = 0;
-        if(hv_controller_read_regs(HSV, &ver, 1))
-        {
-            int idx = MAX_PDB_VER_STR_LEN - 1;
-            uint8_t pv = ver & 0xFF;
-            BYTE_2_3DGIT_STR;
 
-            pv = ver >> 8;
-            BYTE_2_3DGIT_STR;
- 
-            ver_str[MAX_PDB_VER_STR_LEN] = 0;
-            getted = true;
-        }
-    }
+    int idx = MAX_PDB_VER_STR_LEN - 1;
+    uint8_t pv = ver & 0xFF;
+    BYTE_2_3DGIT_STR;
 
-    return getted ? ver_str : nullptr;
+    pv = ver >> 8;
+    BYTE_2_3DGIT_STR;
+
+    gs_pdb_ver_str[MAX_PDB_VER_STR_LEN] = 0;
+    gs_pdb_ver_getted = true;
 
 #undef BYTE_2_3DGIT_STR
-#undef MAX_PDB_VER_STR_LEN
+}
+
+const char* get_pdb_ver_str()
+{
+    return gs_pdb_ver_getted ? gs_pdb_ver_str : nullptr;
 }
 
 void start_expo()

@@ -6,8 +6,10 @@
 #define JSON_KEY_LIST \
     JSON_KEY(JSON_KEY_JSON_TYPE, "json_type") \
     JSON_KEY(JSON_VAL_TYPE_INFO, "info") \
+    JSON_KEY(JSON_KEY_MCB_TYPE, "mc_board_type") \
     JSON_KEY(JSON_KEY_MAC_ADDR, "mac_address") \
     JSON_KEY(JSON_KEY_VERSION, "version") \
+    JSON_KEY(JSON_VAL_MCB_WIFI, "wifi") \
     JSON_KEY(JSON_VAL_TYPE_AP_LIST, "wifi_ap_list") \
     JSON_KEY(JSON_VAL_TYPE_SCAN_WIFI, "scan_wifi") \
     JSON_KEY(JSON_VAL_TYPE_CONN_AP, "conn_wifi_ap") \
