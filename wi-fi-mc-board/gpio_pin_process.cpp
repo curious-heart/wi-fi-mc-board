@@ -15,6 +15,7 @@
 #define BLC       PB3
 
 void set_just_rpt_mb_reg_flag(bool rpt);
+void set_mb_rtu_operated_flag(bool op);
 
 static const unsigned long gs_expo_key_held_to_ms = 5000;
 
@@ -120,6 +121,8 @@ uint16_t get_chg_st_in_reg_form()
 
 void process_hardware_key()
 {
+    bool rtu_oped = false;
+
     if(gs_key_dbg_flag)
     {
         DBG_PRINT(LOG_ERROR, F("irq id: ")); DBG_PRINTLN(LOG_ERROR, gs_irq_id);
@@ -139,6 +142,8 @@ void process_hardware_key()
         {
             start_expo();
             gs_expo_key_held_handled = true;
+
+            rtu_oped = true;
         }
     }
 
@@ -149,6 +154,8 @@ void process_hardware_key()
             static bool turn_on = true;
             switch_range_light(turn_on); turn_on = !turn_on;
             gs_range_light_key_handled = true;
+
+            rtu_oped = true;
         }
     }
 
@@ -163,6 +170,8 @@ void process_hardware_key()
     }
 
     gs_last_charger_on_st = gs_charger_on_st; gs_last_charge_full_st = gs_charge_full_st;
+
+    set_mb_rtu_operated_flag(rtu_oped);
 }
 
 void gpio_pin_init()

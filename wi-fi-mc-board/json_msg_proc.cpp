@@ -12,6 +12,7 @@
 #define JSON_RX_BUF_SIZE 1024
 
 void set_just_rpt_mb_reg_flag(bool rpt);
+void set_mb_rtu_operated_flag(bool op);
 
 /*
  * NOTE:
@@ -237,6 +238,8 @@ void rpt_mb_reg_json()
     {
         set_pdb_ver_str(reg_val_buf[HSV]);
     }
+
+    set_mb_rtu_operated_flag(true);
 }
 
 void rpt_dev_info_bits_json()
@@ -413,6 +416,8 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
             else
             {
                 ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+
+                set_mb_rtu_operated_flag(true);
             }
             new_reg_seg = true;
 
@@ -444,6 +449,8 @@ static void json_cmd_write_mb_reg(JsonDocument& doc)
         else
         {
             ret = hv_controller_write_mult_regs(reg_seg_1st, reg_val_buf, idx);
+
+            set_mb_rtu_operated_flag(true);
         }
         DBG_WRITE_LOG;
     }

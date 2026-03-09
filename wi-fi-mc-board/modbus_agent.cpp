@@ -13,6 +13,8 @@
 #define RTU_BAUDRATE   9600
 
 bool expo_is_allowed();
+void set_mb_reg_written_flag(bool wr);
+void set_mb_rtu_operated_flag(bool op);
 
 static WiFiServer mbServer(MODBUS_TCP_PORT, TCP_MODE, NON_BLOCKING_MODE);
 #define MAX_TCP_CLIENTS 2
@@ -76,13 +78,19 @@ typedef enum
 
 static GwState gwState = GW_IDLE;
 
-void set_mb_reg_written_flag(bool wr);
 /*------------------------------*/
-static uint8_t gs_mb_rtu_adu_buf[gs_mb_max_rtu_adu_len];
+static uint8_t gs_mb_rtu_adu_tx_buf[gs_mb_max_rtu_adu_len], gs_mb_rtu_adu_rx_buf[gs_mb_max_rtu_adu_len];
 static unsigned long gs_rtu_send_time = 0;
 static uint16_t gs_rtu_rx_len = 0;
+
+void flush_mb_rtu_recv_buf()
+{
+    while(g_pdb_serial.available()) g_pdb_serial.read();
+}
+
 static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = nullptr)
 {
+    /*
     int incoming_byte_cnt = g_pdb_serial.available();
     if(incoming_byte_cnt <= 0) return false;
     DBG_PRINT(LOG_DEBUG, F("rtu available bytes ")); DBG_PRINTLN(LOG_DEBUG, incoming_byte_cnt);
@@ -95,18 +103,36 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
 
     if(gs_rtu_rx_len + incoming_byte_cnt > gs_mb_max_rtu_adu_len)
     {
+        DBG_PRINT(LOG_ERROR, F("rtu recv buf full. clear it."));
+        DBG_PRINT(LOG_ERROR, gs_rtu_rx_len); DBG_PRINT(LOG_ERROR, F("+")); DBG_PRINTLN(LOG_ERROR, incoming_byte_cnt);
+
         gs_rtu_rx_len = 0;//buffer full. currently just discard received data. maybe do better in future.
 
     }
-    size_t read_byte_cnt = g_pdb_serial.readBytes(&gs_mb_rtu_adu_buf[gs_rtu_rx_len], incoming_byte_cnt);
+    size_t read_byte_cnt = g_pdb_serial.readBytes(&gs_mb_rtu_adu_rx_buf[gs_rtu_rx_len], incoming_byte_cnt);
     DBG_PRINT(LOG_DEBUG, F("rtu read bytes ")); DBG_PRINTLN(LOG_DEBUG, read_byte_cnt);
     gs_rtu_rx_len += read_byte_cnt;
+    */
+
+    while((gs_rtu_rx_len < gs_mb_max_rtu_adu_len) && g_pdb_serial.available())
+    {
+        gs_mb_rtu_adu_rx_buf[gs_rtu_rx_len] = g_pdb_serial.read();
+        ++gs_rtu_rx_len;
+    }
+    if(gs_rtu_rx_len >= gs_mb_max_rtu_adu_len)
+    {//buffer full.
+        flush_mb_rtu_recv_buf();
+        gs_rtu_rx_len = 0;
+
+        DBG_PRINTLN(LOG_ERROR, F("poll_rtu_response: rtu recv buffer full. discard and clear!"));
+        return false;
+    }
 
     bool complete_resp = false, crc_ok = false;
     if (gs_rtu_rx_len >= gs_mb_min_rtu_resp_adu_len)
     {
         uint16_t expect_len = 0;
-        mb_func_code_e_t resp_func_code = (mb_func_code_e_t)gs_mb_rtu_adu_buf[1]; //the 1st byte is addr byte.
+        mb_func_code_e_t resp_func_code = (mb_func_code_e_t)gs_mb_rtu_adu_rx_buf[1]; //the 1st byte is addr byte.
         if(resp_func_code >= MB_EXCP_FUNC_CODE_START) //exception
         {
             expect_len = 1/*addr*/ + 1/*exception-func_code*/ + 1/*exception code*/ + 2/*crc*/;
@@ -118,7 +144,7 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
             switch(resp_func_code)
             {
                 case MB_FUNC_CODE_READ_HREG:
-                    byte_count = gs_mb_rtu_adu_buf[2];
+                    byte_count = gs_mb_rtu_adu_rx_buf[2];
                     expect_len = 1/*addr*/ + 1/*func code*/ + 1/*byte count*/ + byte_count + 2/*crc*/;
                     break;
 
@@ -131,6 +157,16 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
                     break;
             }
             complete_resp = (gs_rtu_rx_len >= expect_len);
+
+            if(gs_rtu_rx_len > expect_len)
+            {
+                DBG_PRINTLN(LOG_ERROR, F("exceed bytes received."));
+                for(int idx = 0; idx < gs_rtu_rx_len - expect_len ; ++idx)
+                {
+                    DBG_PRINT(LOG_ERROR, gs_mb_rtu_adu_rx_buf[gs_rtu_rx_len + idx]); DBG_PRINT(LOG_ERROR, F(","));
+                }
+                DBG_PRINTLN(LOG_ERROR, "");
+            }
         }
 
         if(complete_resp)
@@ -139,24 +175,25 @@ static bool poll_rtu_response(bool *crc_ret = nullptr, uint16_t * pdu_len = null
             {
                 for(int i = 0; i < gs_rtu_rx_len; ++i)
                 {
-                    DBG_PRINT(LOG_DEBUG, gs_mb_rtu_adu_buf[i], HEX);
+                    DBG_PRINT(LOG_DEBUG, gs_mb_rtu_adu_rx_buf[i], HEX);
                     DBG_PRINT(LOG_DEBUG, F(" "));
                 }
                 DBG_PRINTLN(LOG_DEBUG, F("\n"));
             }
 
 
-            uint16_t crcCalc = modbus_crc16(gs_mb_rtu_adu_buf, expect_len - 2);
-            uint16_t crcRecv = gs_mb_rtu_adu_buf[expect_len - 2] |
-                               (gs_mb_rtu_adu_buf[expect_len - 1] << 8);
+            uint16_t crcCalc = modbus_crc16(gs_mb_rtu_adu_rx_buf, expect_len - 2);
+            uint16_t crcRecv = gs_mb_rtu_adu_rx_buf[expect_len - 2] |
+                               (gs_mb_rtu_adu_rx_buf[expect_len - 1] << 8);
 
             crc_ok = (crcCalc == crcRecv); 
             gs_rtu_rx_len = 0;
+            flush_mb_rtu_recv_buf();
 
             if(pdu_len) *pdu_len = expect_len - 3; //omit the 1st 1 addr byte and the last 2 crc bytes.
 
 
-            DBG_PRINT(LOG_DEBUG, F("crc check: ")); DBG_PRINTLN(LOG_DEBUG, crc_ok);
+            if(!crc_ok) DBG_PRINTLN(LOG_ERROR, F("crc check error!"));
         }
     }
 
@@ -203,7 +240,7 @@ static void update_local_normal_mb_reg_cache(uint8_t * pdu, uint16_t pdu_len, ui
     }
 }
 
-static uint16_t gs_curr_start_reg_no_in_read_req;
+static uint16_t gs_curr_start_reg_no_in_read_req, gs_just_sent_rtu_pdu_len;
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 {
     uint16_t len = 0;
@@ -212,15 +249,15 @@ bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
     {
         return false;
     }
-    gs_mb_rtu_adu_buf[len++] = addr;
-    memcpy(&gs_mb_rtu_adu_buf[len], rtu_pdu, pdu_len);
+    gs_mb_rtu_adu_tx_buf[len++] = addr;
+    memcpy(&gs_mb_rtu_adu_tx_buf[len], rtu_pdu, pdu_len);
     len += pdu_len;
 
-    uint16_t crc = modbus_crc16(gs_mb_rtu_adu_buf, len);
-    gs_mb_rtu_adu_buf[len++] = crc & 0xFF;
-    gs_mb_rtu_adu_buf[len++] = crc >> 8;
+    uint16_t crc = modbus_crc16(gs_mb_rtu_adu_tx_buf, len);
+    gs_mb_rtu_adu_tx_buf[len++] = crc & 0xFF;
+    gs_mb_rtu_adu_tx_buf[len++] = crc >> 8;
 
-    g_pdb_serial.write(gs_mb_rtu_adu_buf, len);
+    g_pdb_serial.write(gs_mb_rtu_adu_tx_buf, len);
 
     {//update local reg cache
         uint8_t fc = rtu_pdu[0];
@@ -236,11 +273,26 @@ bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr)
 
     gs_rtu_send_time = millis();
 
+    gs_just_sent_rtu_pdu_len = pdu_len;
     return true;
 }
 
+static void print_rtu_sent_data()
+{
+    DBG_PRINTLN(LOG_ERROR, F("rtu adu sent:"));
+    for(uint16_t idx = 0; idx < gs_just_sent_rtu_pdu_len + 3; ++idx)
+    {
+        DBG_PRINT(LOG_ERROR, gs_mb_rtu_adu_tx_buf[idx]); DBG_PRINT(LOG_ERROR, F(","));
+    }
+    DBG_PRINTLN(LOG_ERROR, "");
+}
+
+void reset_pdb_serial();
+static bool gs_rtu_resp_timeout_flag = false;
 bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeout_ms)
 {
+    static int timeout_cnt = 0;
+
     bool complet_msg = false, crc_ok = false, timeout = false;
     uint16_t pdu_len = 0;
     while(!(complet_msg = poll_rtu_response(&crc_ok, &pdu_len)))
@@ -249,20 +301,24 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
         if(curr - gs_rtu_send_time >= timeout_ms)
         {
             timeout = true;
-            DBG_PRINTLN(LOG_ERROR, F("read rtu response timeout!"));
+            DBG_PRINT(LOG_ERROR, F("read rtu response timeout! crc_ret, pdu_len, rx_len: "));
+            DBG_PRINT(LOG_ERROR, crc_ok); DBG_PRINT(LOG_ERROR, ","); DBG_PRINT(LOG_ERROR, pdu_len);
+            DBG_PRINT(LOG_ERROR, ","); DBG_PRINTLN(LOG_ERROR, gs_rtu_rx_len);
 
+            print_rtu_sent_data();
             gs_rtu_rx_len = 0;
+
             break;
         }
     }
-    if(rtu_pdu) *rtu_pdu = &gs_mb_rtu_adu_buf[1];
+    if(rtu_pdu) *rtu_pdu = &gs_mb_rtu_adu_rx_buf[1];
     if(pdu_len_ptr) *pdu_len_ptr = pdu_len;
 
     bool ret = (complet_msg && crc_ok && !timeout);
 
     if(ret)
     {//update local reg cache
-        uint8_t* pdu = &gs_mb_rtu_adu_buf[1];
+        uint8_t* pdu = &gs_mb_rtu_adu_rx_buf[1];
         uint8_t fc = pdu[0];
         if(MB_FUNC_CODE_READ_HREG == fc)
         {
@@ -273,6 +329,25 @@ bool read_rtu_response(uint8_t ** rtu_pdu, uint16_t *pdu_len_ptr, uint32_t timeo
             set_mb_reg_written_flag(true);
         }
     }
+
+    if(timeout)
+    {
+        flush_mb_rtu_recv_buf();
+        delay(5);
+
+        DBG_PRINTLN(LOG_ERROR, F("rtu recv buffer flushed."));
+
+        ++timeout_cnt;
+        if(timeout_cnt >= 3)
+        {
+            timeout_cnt = 0;
+            reset_pdb_serial();
+        }
+
+        gs_rtu_resp_timeout_flag = true;
+    }
+
+    set_mb_rtu_operated_flag(true);
 
     return ret;
 }
@@ -313,6 +388,8 @@ void send_tcp_exception(int idx, uint8_t fc, uint8_t code)
     pdu[1] = code;
 
     c.write(gs_mb_tcp_adu_buf, gs_mb_tcp_mbap_len + gs_mb_excption_resp_pdu_len);
+
+    DBG_PRINT(LOG_ERROR, F("mb-tcp-read exception, fc: .")); DBG_PRINTLN(LOG_ERROR, fc);
 }
 
 static void handle_tcp_response(int idx)
@@ -320,6 +397,19 @@ static void handle_tcp_response(int idx)
     uint8_t * pdu_buf;
     uint16_t pdu_len;
     bool ret = read_rtu_response(&pdu_buf, &pdu_len);
+
+    {//for debug
+        ClientCtx&  x = ctx[idx];
+        uint8_t fc_x_pdu = x.pdu[0], fc_tcp_req_adu = gs_mb_tcp_adu_buf[gs_mb_tcp_mbap_len], 
+                fc_in_resp_pdu = pdu_buf[0];
+        if(fc_in_resp_pdu != fc_x_pdu)
+        {
+            DBG_PRINT(LOG_ERROR, F("fc_x_pdu, fc_tcp_req_adu, fc_in_resp_pdu:"));
+            DBG_PRINT(LOG_ERROR, fc_x_pdu); DBG_PRINT(LOG_ERROR, fc_tcp_req_adu);
+            DBG_PRINTLN(LOG_ERROR, fc_in_resp_pdu); 
+
+        }
+    }
 
     if(ret)
     {
@@ -333,6 +423,12 @@ static void handle_tcp_response(int idx)
     ctx[idx].busy = false;
     activeClient = -1;
     gwState = GW_IDLE;
+
+    if(gs_rtu_resp_timeout_flag)
+    {
+        DBG_PRINTLN(LOG_ERROR, F("read rtu to, from handle_tcp_response."));
+        gs_rtu_resp_timeout_flag = false;
+    }
 }
 
 bool read_tcp_req_adu(int idx, uint32_t timeout_ms)
@@ -537,15 +633,16 @@ static void try_handle_tcp_request(int idx)
 
             if(buf)
             {
-                //use gs_mb_rtu_adu_buf as it is read from rtu: the 1st byte is addr. so the pdu is from the 2nd byte.
-                gs_mb_rtu_adu_buf[1] = MB_FUNC_CODE_READ_HREG;
-                gs_mb_rtu_adu_buf[2] = (uint8_t)(reg_cnt * 2);
+                //use gs_mb_rtu_adu_rx_buf as it is read from rtu: the 1st byte is addr.
+                //so the pdu is from the 2nd byte.
+                gs_mb_rtu_adu_rx_buf[1] = MB_FUNC_CODE_READ_HREG;
+                gs_mb_rtu_adu_rx_buf[2] = (uint8_t)(reg_cnt * 2);
                 for(int idx = 0; idx < reg_cnt; ++idx)
                 {
-                    gs_mb_rtu_adu_buf[3 + idx * 2]     = UINT16_HI_BYTE(buf[idx]);
-                    gs_mb_rtu_adu_buf[3 + idx * 2 + 1] = UINT16_LO_BYTE(buf[idx]);
+                    gs_mb_rtu_adu_rx_buf[3 + idx * 2]     = UINT16_HI_BYTE(buf[idx]);
+                    gs_mb_rtu_adu_rx_buf[3 + idx * 2 + 1] = UINT16_LO_BYTE(buf[idx]);
                 }
-                send_tcp_response(idx, &gs_mb_rtu_adu_buf[1], 2 + reg_cnt * 2);
+                send_tcp_response(idx, &gs_mb_rtu_adu_rx_buf[1], 2 + reg_cnt * 2);
             }
             else
             {
@@ -581,23 +678,24 @@ static void try_handle_tcp_request(int idx)
             }
             if(write_mb_ext_regs(start_reg_no, reg_val_buf, reg_cnt))
             {
-                //use gs_mb_rtu_adu_buf as it is read from rtu: the 1st byte is addr. so the pdu is from the 2nd byte.
-                gs_mb_rtu_adu_buf[1] = fc;
-                gs_mb_rtu_adu_buf[2] = UINT16_HI_BYTE(start_reg_no);
-                gs_mb_rtu_adu_buf[3] = UINT16_LO_BYTE(start_reg_no);
+                //use gs_mb_rtu_adu_rx_buf as it is read from rtu: the 1st byte is addr.
+                //so the pdu is from the 2nd byte.
+                gs_mb_rtu_adu_rx_buf[1] = fc;
+                gs_mb_rtu_adu_rx_buf[2] = UINT16_HI_BYTE(start_reg_no);
+                gs_mb_rtu_adu_rx_buf[3] = UINT16_LO_BYTE(start_reg_no);
 
                 if(MB_FUNC_CODE_WRITE_SINGLE_REG == fc)
                 {
-                    gs_mb_rtu_adu_buf[4] = reg_val_buf_in_pdu[0];
-                    gs_mb_rtu_adu_buf[5] = reg_val_buf_in_pdu[1];
+                    gs_mb_rtu_adu_rx_buf[4] = reg_val_buf_in_pdu[0];
+                    gs_mb_rtu_adu_rx_buf[5] = reg_val_buf_in_pdu[1];
                 }
                 else
                 {
-                    gs_mb_rtu_adu_buf[4] = UINT16_HI_BYTE(reg_cnt);
-                    gs_mb_rtu_adu_buf[5] = UINT16_LO_BYTE(reg_cnt);
+                    gs_mb_rtu_adu_rx_buf[4] = UINT16_HI_BYTE(reg_cnt);
+                    gs_mb_rtu_adu_rx_buf[5] = UINT16_LO_BYTE(reg_cnt);
                 }
 
-                send_tcp_response(idx, &gs_mb_rtu_adu_buf[1], 5);
+                send_tcp_response(idx, &gs_mb_rtu_adu_rx_buf[1], 5);
             }
             else
             {
@@ -675,8 +773,23 @@ void end_mb_tcp_server()
     gs_mb_server_started = false;
 }
 
+static void restart_mb_tcp_server()
+{
+    end_mb_tcp_server();
+    delay(500);
+
+    mbServer.begin();
+}
+
 void modbus_tcp_server(bool work)
 {
+    extern uint32_t g_gap_between_consec_rtu_op_ms;
+    extern uint32_t g_mb_tcp_server_active_check_dura_ms;
+
+    static uint32_t ls_server_active_point_ms = 0;
+
+    bool client_active = false;
+
     if(!gs_mb_server_started && work)
     {
         mbServer.begin();
@@ -708,8 +821,18 @@ void modbus_tcp_server(bool work)
             if (gwState == GW_WAIT_RTU)
             {
                 handle_tcp_response(i);
+                delay(g_gap_between_consec_rtu_op_ms);
+
+                client_active = true;
+                ls_server_active_point_ms = millis();
             }
         }
+    }
+
+    if(!client_active && (millis() - ls_server_active_point_ms >= g_mb_tcp_server_active_check_dura_ms))
+    { //if no wifi client connected for a long time, restart tcp server.
+        restart_mb_tcp_server();
+        gs_mb_server_started = true;
     }
 }
 
@@ -728,6 +851,13 @@ bool hv_controller_write_single_reg(uint16_t reg_addr, uint16_t value)
 
     ret = send_mb_rtu_request(pdu, sizeof(pdu));
     if(ret) ret = read_rtu_response();
+
+
+    if(gs_rtu_resp_timeout_flag)
+    {
+        DBG_PRINTLN(LOG_ERROR, F("read rtu to, from hv_controller_write_single_reg."));
+        gs_rtu_resp_timeout_flag = false;
+    }
     return ret;
 }
 
@@ -754,6 +884,12 @@ bool hv_controller_write_mult_regs(uint16_t reg_addr_start, uint16_t *buf, int r
 
     ret = send_mb_rtu_request(pdu, pdu_len);
     if(ret) ret = read_rtu_response();
+
+    if(gs_rtu_resp_timeout_flag)
+    {
+        DBG_PRINTLN(LOG_ERROR, F("read rtu to, from hv_controller_write_mult_regs."));
+        gs_rtu_resp_timeout_flag = false;
+    }
     return ret;
 }
 
@@ -787,6 +923,12 @@ bool hv_controller_read_regs(uint16_t reg_addr_start, uint16_t * buf, int reg_cn
                 buf[idx] = (uint16_t)((val_byte_ptr[2*idx] << 8) | (val_byte_ptr[2*idx + 1]));
             }
         }
+    }
+
+    if(gs_rtu_resp_timeout_flag)
+    {
+        DBG_PRINTLN(LOG_ERROR, F("read rtu to, from hv_controller_read_regs."));
+        gs_rtu_resp_timeout_flag = false;
     }
     return ret;
 }

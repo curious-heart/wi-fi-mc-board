@@ -19,7 +19,7 @@ typedef enum
     MB_GW_TGT_DEV_FAILED_TO_RESP = 0x0B,
 }mb_exception_code_e_t;
 
-#define RTU_TIMEOUT_MS 800
+#define RTU_TIMEOUT_MS 1500
 #define MODBUS_RTU_SRV_ADDR 1
 bool send_mb_rtu_request(uint8_t * rtu_pdu, uint16_t pdu_len, uint8_t addr = MODBUS_RTU_SRV_ADDR);
 

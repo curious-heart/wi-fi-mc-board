@@ -86,6 +86,7 @@ void switch_range_light(bool on);
 
 void set_pdb_ver_str(uint16_t ver);
 bool pdb_ver_getted();
+void flush_mb_rtu_recv_buf();
 
 extern uint16_t g_mb_normal_reg_val_cache[];
 extern uint16_t g_mb_ext_reg_val[];

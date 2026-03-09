@@ -13,14 +13,14 @@
 #include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-s";
+constexpr const char g_wifi_mc_ver_str[] = "d015-u";
 
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
 
 static constexpr long gs_scrn_serial_baud = 115200;
 static constexpr long gs_pdb_serial_baud = 9600;
-static const long gs_pdb_serial_ro_to_ms = 300; //this value should not exceeds RTU_TIMEOUT_MS(in logic).
+static const long gs_pdb_serial_ro_to_ms = 1000; //this value should not exceeds RTU_TIMEOUT_MS(in logic).
 
 Stream& g_scrn_serial = Serial;
 Stream& g_pdb_serial = Serial1;
@@ -29,12 +29,14 @@ Stream& g_dbg_serial = Serial;
 static constexpr uint32_t gs_wdt_dura_ms = 30000;
 static constexpr uint32_t gs_wdt_reset_wait_ms = 10000;
 
-
 static const unsigned long gs_maitain_nw_period_ms = 3000;
 static const unsigned long gs_tof_report_period_ms = 2000;
 static const unsigned long gs_mb_reg_rpt_period_ms = 10000;
 static const unsigned long gs_dev_info_rpt_period_ms = 30000;
 
+uint32_t g_gap_between_consec_rtu_op_ms = 100;
+
+uint32_t g_mb_tcp_server_active_check_dura_ms = (30 * 60 * 1000);
 
 WDT wdt;
 
@@ -61,6 +63,7 @@ const char* get_dev_ver_str()
 }
 
 static bool gs_mb_reg_written = false, gs_just_rpt_mb_reg = false;
+static bool gs_mb_rtu_operated = false;
 void set_mb_reg_written_flag(bool wr)
 {
     gs_mb_reg_written = wr;
@@ -68,6 +71,10 @@ void set_mb_reg_written_flag(bool wr)
 void set_just_rpt_mb_reg_flag(bool rpt)
 {
     gs_just_rpt_mb_reg = rpt;
+}
+void set_mb_rtu_operated_flag(bool op)
+{
+    gs_mb_rtu_operated = op;
 }
 
 void allow_force_expo_ig_dist(bool flag)
@@ -84,6 +91,25 @@ bool expo_is_allowed()
     return (curr_dist >= g_min_dist_for_expo_mm);
 }
 
+void reset_pdb_serial()
+{
+    Serial1.end();
+    delay(100);
+    Serial1.begin(gs_pdb_serial_baud);
+    while (!Serial1) { delay(1);}
+    //now we use read instead of readBytes, so the setTimeout is not necessary in fact.
+    Serial1.setTimeout(gs_pdb_serial_ro_to_ms);
+
+    flush_mb_rtu_recv_buf();
+
+    DBG_PRINTLN(LOG_ERROR, F("pdb serial reseted!"));
+}
+
+void flush_scrn_serial_recv_buf()
+{
+    while(g_scrn_serial.available()) g_scrn_serial.read();
+}
+
 void setup(void)
 {
     Serial.begin(gs_scrn_serial_baud);
@@ -97,9 +123,12 @@ void setup(void)
 
     //wait until serial port opens for native USB devices
     while (!Serial) { delay(1); }
+    flush_scrn_serial_recv_buf();
 
     while (!Serial1) { delay(1);}
+    //now we use read instead of readBytes, so the setTimeout is not necessary in fact.
     Serial1.setTimeout(gs_pdb_serial_ro_to_ms);
+    flush_mb_rtu_recv_buf();
 
     g_dbg_serial.print(F("\n\nstart to run: ")); g_dbg_serial.println(g_wifi_mc_ver_str);
 
@@ -110,6 +139,9 @@ void setup(void)
     wifi_init();
 }
 
+#define DELAY_FOR_MB_RTU_IF_NEEDED \
+{ if(gs_mb_rtu_operated) delay(g_gap_between_consec_rtu_op_ms); }
+
 void loop(void)
 {
     static bool start_up = true;
@@ -119,6 +151,7 @@ void loop(void)
  
     /* process hard-key */
     process_hardware_key();
+    DELAY_FOR_MB_RTU_IF_NEEDED;
  
     /* maitain network */
     if(start_up || ((millis() - ls_maitain_nw_rpt_time) >= gs_maitain_nw_period_ms))
@@ -142,9 +175,11 @@ void loop(void)
  
     /* process (json) msg from screen */
     json_msg_recv_proc(g_scrn_serial);
+    DELAY_FOR_MB_RTU_IF_NEEDED;
 
     /* process msg from modbus client */
     modbus_tcp_server(WL_CONNECTED == curr_wifi_status());
+    /*here, no DELAY_FOR_MB_RTU_IF_NEEDED is called. the delay is handled in server itself.*/
 
     /* report tof distance */
     uint16_t average = calc_dis();
@@ -158,6 +193,8 @@ void loop(void)
     if(gs_mb_reg_written)
     {
         rpt_mb_reg_json();
+        DELAY_FOR_MB_RTU_IF_NEEDED;
+
         ls_last_reg_rpt_time = millis();
 
         set_mb_reg_written_flag(false);
@@ -167,6 +204,7 @@ void loop(void)
         if(!gs_just_rpt_mb_reg)
         {
             rpt_mb_reg_json();
+            DELAY_FOR_MB_RTU_IF_NEEDED;
         }
         set_just_rpt_mb_reg_flag(false);
 
