@@ -76,7 +76,7 @@ static void range_light_key_switched(uint32_t id, uint32_t event)
 /*----------------------------------------*/
 volatile static bool gs_charger_on_st = false, gs_last_charger_on_st = false;
 static void charger_plugged(uint32_t id, uint32_t event)
-{
+{//this func is not used now since the pin seems not act proper in change-irq mode.
     if(HIGH == digitalRead(CHARGER_ST))
     {//plugged
         gs_charger_on_st = true;
@@ -94,7 +94,7 @@ static void charger_plugged(uint32_t id, uint32_t event)
 /*----------------------------------------*/
 volatile static bool gs_charge_full_st = false, gs_last_charge_full_st = false;
 static void charge_full_irq(uint32_t id, uint32_t event)
-{
+{//this func is not used now since the pin seems not act proper in change-irq mode.
     if(HIGH == digitalRead(CHARG_FULL_SC_PG))
     {//full
         gs_charge_full_st = true;
@@ -159,6 +159,8 @@ void process_hardware_key()
         }
     }
 
+    gs_charger_on_st = (HIGH == digitalRead(CHARGER_ST));
+    gs_charge_full_st = (HIGH == digitalRead(CHARG_FULL_SC_PG));
     bool rpt_chg = ((gs_charger_on_st != gs_last_charger_on_st) || (gs_charge_full_st != gs_last_charge_full_st));
     if(rpt_chg)
     {
@@ -182,11 +184,17 @@ void gpio_pin_init()
     pinMode(RANGE_LIGH_KEY, INPUT_IRQ_CHANGE);  //
     digitalSetIrqHandler(RANGE_LIGH_KEY, range_light_key_switched);
 
+    pinMode(CHARGER_ST, INPUT_PULLDOWN);  //
+    /* charg and sc_pg seems not work in INPUT_IRQ_CHANGE mode. so we poll them...
     pinMode(CHARGER_ST, INPUT_IRQ_CHANGE);  //
     digitalSetIrqHandler(CHARGER_ST, charger_plugged);
+    */
 
+    pinMode(CHARG_FULL_SC_PG, INPUT_PULLDOWN);  //
+    /*
     pinMode(CHARG_FULL_SC_PG, INPUT_IRQ_CHANGE);  //
     digitalSetIrqHandler(CHARG_FULL_SC_PG, charge_full_irq);
+    */
 
     pinMode(XSHUTDOWN, OUTPUT); 
     digitalWrite(XSHUTDOWN, HIGH);

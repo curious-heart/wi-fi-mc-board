@@ -13,7 +13,7 @@
 #include "tof_dist.h"
 
 constexpr const char g_dev_maj_ver[] = "v1";
-constexpr const char g_wifi_mc_ver_str[] = "d015-u";
+constexpr const char g_wifi_mc_ver_str[] = "d015-v";
 
 bool gs_allow_force_exposure_ignoring_dist = false;
 uint16_t g_min_dist_for_expo_mm = 200;
@@ -32,7 +32,10 @@ static constexpr uint32_t gs_wdt_reset_wait_ms = 10000;
 static const unsigned long gs_maitain_nw_period_ms = 3000;
 static const unsigned long gs_tof_report_period_ms = 2000;
 static const unsigned long gs_mb_reg_rpt_period_ms = 10000;
-static const unsigned long gs_dev_info_rpt_period_ms = 30000;
+
+static const unsigned long gs_dev_info_rpt_period_at_start_ms = 5000;
+static const unsigned long gs_dev_info_rpt_period_normal_ms = 30000;
+static unsigned long gs_dev_info_rpt_period_ms = 30000;
 
 uint32_t g_gap_between_consec_rtu_op_ms = 100;
 
@@ -211,7 +214,8 @@ void loop(void)
         ls_last_reg_rpt_time = millis();
     }
 
-    if(start_up || (millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
+    gs_dev_info_rpt_period_ms = start_up ? gs_dev_info_rpt_period_at_start_ms : gs_dev_info_rpt_period_normal_ms;
+    if((millis() - ls_last_dev_inf_rpt_time) >= gs_dev_info_rpt_period_ms)
     {
         rpt_dev_info_json();
         ls_last_dev_inf_rpt_time = millis();
